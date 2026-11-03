@@ -13,7 +13,8 @@
 * DIFFERENTIAL-MODE (DM) PATH  (same structure as OPAMP_FULL)
 *   - DC gain A0, dominant pole, GBW, two extra poles (FP2, FP3)
 *   - input stage tanh() -> differential output slew rate SR
-*   - input CM range window, differential clamp (optional), input R/C
+*   - input CM range window, input R/C, optional differential clamp
+*     (anti-parallel diodes between inp and inn; no clamps to the rails)
 *   - VOS, IB/IOS, CMRR(f), PSRR(f), white + 1/f voltage noise, white + 1/f
 *     current noise (FCIN = 1/f corner, independent on each input; 0 = off)
 * COMMON-MODE (CM) LOOP  (internal CMFB)
@@ -37,6 +38,74 @@
 *   - FDOPAMP_CORE exposes the single-ended CM control path through the pins
 *     cmo (CM amplifier output) and cmi (output-stage CM input), so that the
 *     CM loop can be opened for loop-gain tests. FDOPAMP_FULL joins them.
+*
+* PARAMETERS  (name, unit, default, meaning)
+*  Gain and frequency response
+*   A0      V/V    100k     open-loop DC gain
+*   GBW     Hz     100Meg   gain-bandwidth product (unity-gain frequency of the
+*                           dominant-pole response)
+*   FP2     Hz     300Meg   second pole
+*   FP3     Hz     1G       third pole
+*   SR      V/s    200Meg   slew rate of the DIFFERENTIAL output
+*                           (each output slews at SR/2)
+*  Input DC errors and impedance
+*   VOS     V      1m       input offset voltage, in series with the + input
+*   IB      A      2u       input bias current (average of the two pins);
+*                           IB > 0 flows into the pins (NPN), IB < 0 out (PNP)
+*   IOS     A      0.1u     input offset current, I(inp) - I(inn)
+*   RID     ohm    1Meg     differential input resistance (noiseless)
+*   CID     F      1p       differential input capacitance
+*   RIC     ohm    100Meg   common-mode input resistance, inputs tied (noiseless;
+*                           each pin gets 2*RIC to ground)
+*   CIC     F      2p       common-mode input capacitance, inputs tied (each pin
+*                           gets CIC/2 to ground)
+*  Differential input clamp (two anti-parallel diodes between inp and inn;
+*  there are no clamp diodes from the inputs to the supply rails)
+*   VCLMP   V      100      forward voltage of each diode at 1 mA (set through
+*                           the emission coefficient); 100 = no clamp.
+*                           OP27-style clamp: VCLMP=0.7 RCLMP=100
+*   RCLMP   ohm    100      series resistance of each clamp diode
+*  Common-mode and supply rejection
+*   CMRR    ratio  31.6k    DC CMRR (31.6k = 90 dB)
+*   FCMRR   Hz     100k     CMRR falls at 20 dB/dec above this frequency
+*   PSRRP   ratio  10k      DC rejection of the positive supply
+*   PSRRN   ratio  10k      DC rejection of the negative supply
+*   FPSRR   Hz     100k     PSRR falls at 20 dB/dec above this frequency
+*   VCCN    V      5        nominal positive supply (PSRR reference)
+*   VEEN    V      -5       nominal negative supply (PSRR reference)
+*   VCMN    V      mid      input CM voltage at which VOS is specified; the
+*                           CMRR error is (Vcm - VCMN)/CMRR
+*  Noise
+*   ENOISE  V/rtHz 5n       white input voltage noise density
+*   FCEN    Hz     1k       1/f corner of the voltage noise
+*   INOISE  A/rtHz 1p       white input current noise density, each input
+*   FCIN    Hz     0        1/f corner of the current noise (independent on
+*                           the two inputs); 0 = white only
+*  Supplies, input range and output swing
+*   ICCQ    A      10m      quiescent supply current, vcc to vee
+*   ICMHI   V      1.5      input CM range: distance below vcc at which the
+*                           input-stage gm has fallen to half (< 0: beyond rail)
+*   ICMLO   V      1        the same, above vee
+*   VK      V      0.1      width of the gm roll-off at the input-range edges
+*   VHD     V      1.2      minimum headroom, output to vcc (swing limit)
+*   VLD     V      1.2      minimum headroom, output to vee (swing limit)
+*  Output stage (per output)
+*   ROUT    ohm    10       output resistance
+*   COUT    F      1p       output capacitance to ground
+*   ISRC    A      50m      maximum source current
+*   ISNK    A      50m      maximum sink current
+*   VXO     V      0        class-AB crossover dead zone: for |Iout| below about
+*                           VXO/ROUT the small-signal output resistance is
+*                           2*ROUT; 0 disables it
+*  Common-mode loop and vocm pin (FDA only)
+*   A0CM    V/V    10k      DC gain of the CM error amplifier
+*   GBWCM   Hz     50Meg    unity-gain frequency of the CM error amplifier
+*   FPCM2   Hz     200Meg   second pole of the CM loop
+*   SRCM    V/s    100Meg   slew rate of the output CM voltage
+*   VOSCM   V      1m       output CM offset: Vout,cm = V(vocm) + VOSCM
+*   RVOCM   ohm    50k      vocm pin bias: 2*RVOCM (noiseless) to each rail,
+*                           i.e. RVOCM to mid-supply when the pin is open
+*   CVOCM   F      1p       vocm pin capacitance to ground
 *==============================================================================
 
 *------------------------------------------------------------------------------

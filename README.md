@@ -41,7 +41,7 @@ overload and saturation behaviour.
 - input offset voltage, bias and offset currents (`IB > 0` flows into the pins)
 - a `tanh()` input transconductor: one mechanism gives both the slew rate `SR` and a realistic growth of distortion as the signal approaches the full-power bandwidth
 - input common-mode range with a soft edge (the input stage's gm collapses near the rails)
-- optional anti-parallel input clamp diodes (`VCLMP`, `RCLMP`)
+- optional differential input clamp: two anti-parallel diodes between `inp` and `inn` (`VCLMP`, `RCLMP`); no clamps to the rails
 - output swing limited by the supplies (`VHD`, `VLD` headroom) with a soft clamp of the gain node, so the output recovers from saturation immediately
 - output current limit (`ISRC`, `ISNK`) and a class-AB crossover region (`VXO`) in which the small-signal output resistance doubles
 - supply current: quiescent current plus the load current, drawn from the correct rail
@@ -88,33 +88,87 @@ way, from `tests/`.
 
 ## Parameters
 
-| Parameter | Meaning | `OPAMP_FULL` default | `FDOPAMP_FULL` default |
+All parameters are optional; the defaults are listed for both models. Values use SPICE
+suffixes (`k`, `Meg`, `G`, `m`, `u`, `n`, `p`, `f`).
+
+**Gain and frequency response**
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `A0` | V/V | open-loop DC gain | 200k | 100k |
+| `GBW` | Hz | gain-bandwidth product: unity-gain frequency of the dominant-pole response | 1Meg | 100Meg |
+| `FP2`, `FP3` | Hz | second and third (non-dominant) poles | 3Meg, 10Meg | 300Meg, 1G |
+| `SR` | V/s | slew rate; for the FDA the slew rate of the differential output (each output slews at `SR/2`) | 0.5Meg | 200Meg |
+
+**Input: DC errors and impedance**
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `VOS` | V | input offset voltage, in series with the + input | 1m | 1m |
+| `IB` | A | input bias current (average of the two pins); `IB > 0` flows into the pins (NPN input), `IB < 0` out of them (PNP input) | 80n | 2u |
+| `IOS` | A | input offset current, I(inp) − I(inn) | 20n | 0.1u |
+| `RID`, `CID` | Ω, F | differential input resistance and capacitance (between `inp` and `inn`) | 2Meg, 1.4p | 1Meg, 1p |
+| `RIC`, `CIC` | Ω, F | common-mode input resistance and capacitance, measured with both inputs tied (each pin gets `2*RIC` ∥ `CIC/2` to ground) | 200Meg, 1.5p | 100Meg, 2p |
+
+**Differential input clamp**
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `VCLMP` | V | forward voltage at 1 mA of each of the two anti-parallel diodes connected between `inp` and `inn` (set through the diode emission coefficient). `VCLMP=100` means a 100 V drop at 1 mA, i.e. no clamp | 100 | 100 |
+| `RCLMP` | Ω | series resistance of each clamp diode | 100 | 100 |
+
+There are no clamp diodes from the inputs to the supply rails. For an OP27-style clamp use
+`VCLMP=0.7 RCLMP=100`.
+
+**Common-mode and supply rejection**
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `CMRR` | ratio | DC common-mode rejection ratio (31.6k = 90 dB) | 31.6k | 31.6k |
+| `FCMRR` | Hz | frequency above which CMRR falls at 20 dB/decade | 200 | 100k |
+| `PSRRP`, `PSRRN` | ratio | DC rejection of the positive and of the negative supply | 31.6k, 31.6k | 10k, 10k |
+| `FPSRR` | Hz | frequency above which PSRR falls at 20 dB/decade | 100 | 100k |
+| `VCCN`, `VEEN` | V | nominal supply voltages; the PSRR error is referred to them | 15, −15 | 5, −5 |
+| `VCMN` | V | input common-mode voltage at which `VOS` is specified; the CMRR error is (Vcm − `VCMN`)/`CMRR` | mid-supply | mid-supply |
+
+**Noise**
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `ENOISE` | V/√Hz | white input voltage noise density | 20n | 5n |
+| `FCEN` | Hz | 1/f corner of the voltage noise | 200 | 1k |
+| `INOISE` | A/√Hz | white input current noise density, on each input | 0.5p | 1p |
+| `FCIN` | Hz | 1/f corner of the current noise; independent sources on the two inputs; 0 = white only | 0 | 0 |
+
+**Supplies, input range and output swing**
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `ICCQ` | A | quiescent supply current, from `vcc` to `vee` | 1.7m | 10m |
+| `ICMHI`, `ICMLO` | V | input common-mode range: distance below `vcc` and above `vee` at which the input-stage gm has fallen to half; negative values extend the range beyond the rails | 2, 2 | 1.5, 1 |
+| `VK` | V | width of the gm roll-off at the edges of the input range | 0.15 | 0.1 |
+| `VHD`, `VLD` | V | minimum headroom between the output and the positive / negative rail (output swing limit) | 2, 2 | 1.2, 1.2 |
+
+**Output stage** (per output for the FDA)
+
+| Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
+|---|---|---|---|---|
+| `ROUT` | Ω | output resistance | 75 | 10 |
+| `COUT` | F | output capacitance to ground | 3p | 1p |
+| `ISRC`, `ISNK` | A | maximum current the output can source / sink | 25m, 25m | 50m, 50m |
+| `VXO` | V | class-AB crossover dead zone: for output currents below about `VXO/ROUT` the small-signal output resistance is `2*ROUT`; 0 disables it | 2m | 0 |
+
+**FDA common-mode loop and `vocm` pin** (`FDOPAMP_FULL` and `FDOPAMP_CORE` only)
+
+| Parameter | Unit | Meaning | Default |
 |---|---|---|---|
-| `A0` | open-loop DC gain (V/V) | 200k | 100k |
-| `GBW` | gain-bandwidth product (Hz) | 1Meg | 100Meg |
-| `SR` | slew rate (V/s); differential output slew rate for the FDA | 0.5Meg | 200Meg |
-| `FP2`, `FP3` | second and third poles (Hz) | 3Meg, 10Meg | 300Meg, 1G |
-| `VOS` | input offset voltage (V) | 1m | 1m |
-| `IB`, `IOS` | input bias and offset current (A); `IB > 0` flows into the pins | 80n, 20n | 2u, 0.1u |
-| `RID`, `CID` | differential input resistance and capacitance | 2Meg, 1.4p | 1Meg, 1p |
-| `RIC`, `CIC` | common-mode input resistance and capacitance (inputs tied) | 200Meg, 1.5p | 100Meg, 2p |
-| `CMRR`, `FCMRR` | DC CMRR (ratio) and the frequency where it starts to fall (Hz) | 31.6k, 200 | 31.6k, 100k |
-| `PSRRP`, `PSRRN`, `FPSRR` | DC PSRR for the positive and negative supply (ratio), roll-off frequency (Hz) | 31.6k, 31.6k, 100 | 10k, 10k, 100k |
-| `VCCN`, `VEEN` | nominal supply voltages (PSRR reference) | 15, −15 | 5, −5 |
-| `VCMN` | input CM voltage at which `VOS` is specified | mid-supply | mid-supply |
-| `ENOISE`, `FCEN` | white input voltage noise (V/√Hz) and its 1/f corner (Hz) | 20n, 200 | 5n, 1k |
-| `INOISE` | white input current noise per input (A/√Hz) | 0.5p | 1p |
-| `FCIN` | 1/f corner of the input current noise (Hz); 0 = white only | 0 | 0 |
-| `ICCQ` | quiescent supply current (A) | 1.7m | 10m |
-| `VHD`, `VLD` | output headroom to the positive / negative rail (V) | 2, 2 | 1.2, 1.2 |
-| `ICMHI`, `ICMLO`, `VK` | input CM range headroom to the rails (V) and softness of its edge (V) | 2, 2, 0.15 | 1.5, 1, 0.1 |
-| `ROUT`, `COUT` | output resistance and capacitance (per output) | 75, 3p | 10, 1p |
-| `ISRC`, `ISNK` | output source / sink current limit (A) | 25m, 25m | 50m, 50m |
-| `VXO` | class-AB crossover dead-zone voltage (V); 0 disables it | 2m | 0 |
-| `VCLMP`, `RCLMP` | input clamp diode drop at 1 mA (V) and series resistance; `VCLMP=100` disables the clamp | 100, 100 | 100, 100 |
-| `A0CM`, `GBWCM`, `FPCM2` | FDA: CM loop DC gain, unity-gain frequency, second pole | — | 10k, 50Meg, 200Meg |
-| `SRCM`, `VOSCM` | FDA: output CM slew rate (V/s), CM offset (V) | — | 100Meg, 1m |
-| `RVOCM`, `CVOCM` | FDA: `vocm` pin divider (`2*RVOCM` to each rail, noiseless) and capacitance | — | 50k, 1p |
+| `A0CM` | V/V | DC gain of the common-mode error amplifier | 10k |
+| `GBWCM` | Hz | unity-gain frequency of the common-mode error amplifier | 50Meg |
+| `FPCM2` | Hz | second pole of the common-mode loop | 200Meg |
+| `SRCM` | V/s | slew rate of the output common-mode voltage | 100Meg |
+| `VOSCM` | V | output common-mode offset: V(out,cm) = V(`vocm`) + `VOSCM` | 1m |
+| `RVOCM` | Ω | `vocm` pin bias: `2*RVOCM` (noiseless) to each rail, i.e. `RVOCM` to mid-supply when the pin is left open | 50k |
+| `CVOCM` | F | capacitance of the `vocm` pin to ground | 1p |
 
 The `OPAMP_FULL` defaults approximate a general-purpose 1 MHz bipolar op amp (µA741
 typicals) on ±15 V; the `FDOPAMP_FULL` defaults a generic ±5 V, 100 MHz FDA. A

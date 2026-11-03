@@ -18,7 +18,8 @@
 *   - input offset voltage, input bias and offset currents
 *   - input stage tanh() characteristic  -> slew rate and large-signal THD
 *   - input common-mode range (gm collapses near the rails)
-*   - optional differential input clamp (VCLMP, RCLMP)
+*   - optional differential input clamp: anti-parallel diodes between inp
+*     and inn (VCLMP, RCLMP); no clamps to the rails
 *   - output voltage swing limited by the supplies (VHD/VLD headroom)
 *   - output current limit (ISRC/ISNK), class-AB crossover dead-zone (VXO)
 *   - supply current = quiescent + load current drawn from the right rail
@@ -42,13 +43,72 @@
 *     together (datasheet convention): each pin gets 2*RIC || CIC/2.
 *   - VCMN: the input common-mode voltage at which VOS is specified. The CMRR
 *     error term is (Vcm - VCMN)/CMRR. The default is mid-supply.
-*   - Differential clamp: anti-parallel diodes with drop VCLMP at 1 mA and
+*   - Differential clamp: two anti-parallel diodes between inp and inn, each
+*     with forward voltage VCLMP at 1 mA and
 *     series resistance RCLMP. The default VCLMP=100 disables it (the 741 has
 *     no clamp diodes; leakage < 1e-14 A at 15 V). For an OP27-style clamp use
 *     VCLMP=0.7 RCLMP=100 (the original model's DIN diodes).
 *   - Crossover: for |Iout| << VXO/ROUT the small-signal output resistance is
 *     2*ROUT. It is ROUT once |Iout| > ~2*VXO/ROUT (2 mV/75 ohm ~ 50 uA).
 *     Set VXO=0 for a plain ROUT everywhere.
+*
+* PARAMETERS  (name, unit, default, meaning)
+*  Gain and frequency response
+*   A0      V/V    200k     open-loop DC gain
+*   GBW     Hz     1Meg     gain-bandwidth product (unity-gain frequency of the
+*                           dominant-pole response)
+*   FP2     Hz     3Meg     second pole
+*   FP3     Hz     10Meg    third pole
+*   SR      V/s    0.5Meg   slew rate (0.5Meg = 0.5 V/us)
+*  Input DC errors and impedance
+*   VOS     V      1m       input offset voltage, in series with the + input
+*   IB      A      80n      input bias current (average of the two pins);
+*                           IB > 0 flows into the pins (NPN), IB < 0 out (PNP)
+*   IOS     A      20n      input offset current, I(inp) - I(inn)
+*   RID     ohm    2Meg     differential input resistance (noiseless)
+*   CID     F      1.4p     differential input capacitance
+*   RIC     ohm    200Meg   common-mode input resistance, inputs tied (noiseless;
+*                           each pin gets 2*RIC to ground)
+*   CIC     F      1.5p     common-mode input capacitance, inputs tied (each pin
+*                           gets CIC/2 to ground)
+*  Differential input clamp (two anti-parallel diodes between inp and inn;
+*  there are no clamp diodes from the inputs to the supply rails)
+*   VCLMP   V      100      forward voltage of each diode at 1 mA (set through
+*                           the emission coefficient); 100 = no clamp.
+*                           OP27-style clamp: VCLMP=0.7 RCLMP=100
+*   RCLMP   ohm    100      series resistance of each clamp diode
+*  Common-mode and supply rejection
+*   CMRR    ratio  31.6k    DC CMRR (31.6k = 90 dB)
+*   FCMRR   Hz     200      CMRR falls at 20 dB/dec above this frequency
+*   PSRRP   ratio  31.6k    DC rejection of the positive supply
+*   PSRRN   ratio  31.6k    DC rejection of the negative supply
+*   FPSRR   Hz     100      PSRR falls at 20 dB/dec above this frequency
+*   VCCN    V      15       nominal positive supply (PSRR reference)
+*   VEEN    V      -15      nominal negative supply (PSRR reference)
+*   VCMN    V      mid      input CM voltage at which VOS is specified; the
+*                           CMRR error is (Vcm - VCMN)/CMRR
+*  Noise
+*   ENOISE  V/rtHz 20n      white input voltage noise density
+*   FCEN    Hz     200      1/f corner of the voltage noise
+*   INOISE  A/rtHz 0.5p     white input current noise density, each input
+*   FCIN    Hz     0        1/f corner of the current noise (independent on
+*                           the two inputs); 0 = white only
+*  Supplies, input range and output swing
+*   ICCQ    A      1.7m     quiescent supply current, vcc to vee
+*   ICMHI   V      2        input CM range: distance below vcc at which the
+*                           input-stage gm has fallen to half (< 0: beyond rail)
+*   ICMLO   V      2        the same, above vee
+*   VK      V      0.15     width of the gm roll-off at the input-range edges
+*   VHD     V      2        minimum headroom, output to vcc (swing limit)
+*   VLD     V      2        minimum headroom, output to vee (swing limit)
+*  Output stage
+*   ROUT    ohm    75       output resistance
+*   COUT    F      3p       output capacitance to ground
+*   ISRC    A      25m      maximum source current
+*   ISNK    A      25m      maximum sink current
+*   VXO     V      2m       class-AB crossover dead zone: for |Iout| below about
+*                           VXO/ROUT the small-signal output resistance is
+*                           2*ROUT; 0 disables it
 *==============================================================================
 
 *------------------------------------------------------------------------------

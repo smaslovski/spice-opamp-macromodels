@@ -1,0 +1,50 @@
+* Example 3 - OPAMP_FULL: input-referred noise and noise figure vs source resistance
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unity-gain follower, source resistance Rs at the + input.
+* Unique model features shown: the model's only noise generators are the input
+* voltage noise (white ENOISE + 1/f corner FCEN) and the input current noise
+* INOISE; all internal resistors are noiseless. So the simulated noise equals
+*   e_tot^2 = ENOISE^2*(1 + FCEN/f) + (INOISE*Rs)^2 + 4kT*Rs
+* and the noise figure has its textbook minimum at Rs = ENOISE/INOISE.
+* Defaults: ENOISE = 20 nV/rtHz, FCEN = 200 Hz, INOISE = 0.5 pA/rtHz -> Ropt = 40k.
+.include ../models/opamp_full.lib
+Vcc vcc 0 15
+Vee vee 0 -15
+X1  p o vcc vee o OPAMP_FULL
+Rs  s p 1k
+Vs  s 0 DC 0 AC 1
+
+.control
+set kt = 4.1435e-21
+* --- 1. noise spectra for three source resistances ---------------------------
+foreach r 100 40k 1Meg
+  alter Rs = $r
+  noise v(o) Vs dec 20 1 1Meg
+  setplot previous
+  let rs = $r
+  let etheo = sqrt(400e-18*(1+200/frequency) + (0.5e-12*rs)^2 + 4*$kt*rs)
+  let ratio = onoise_spectrum/etheo
+  * frequency[60] = 1 kHz (20 points/decade from 1 Hz)
+  let e1k = onoise_spectrum[60]
+  * compare up to 10 kHz (index 80); above that the closed-loop bandwidth and
+  * the input capacitance (with large Rs) roll the output noise off
+  let rlo = ratio[0,80]
+  let rmin = vecmin(rlo)
+  let rmax = vecmax(rlo)
+  echo "Rs = $r: e_n,in(1 kHz) = $&e1k V/rtHz; simulated/theory (1 Hz-10 kHz) = $&rmin ... $&rmax"
+  wrdata ex03_noise_{$r}.txt onoise_spectrum etheo
+end
+* --- 2. noise figure at 1 kHz vs Rs -------------------------------------------
+echo "Rs[ohm]    NF@1kHz[dB]   theory[dB]"
+foreach r 1k 3k 10k 20k 40k 80k 160k 400k 1Meg
+  alter Rs = $r
+  noise v(o) Vs lin 3 999 1001
+  setplot previous
+  let rs = $r
+  let e2 = onoise_spectrum[1]^2
+  let nf = 10*log10(e2/(4*$kt*rs))
+  let nft = 10*log10(1 + (400e-18*(1+200/1k) + (0.5e-12*rs)^2)/(4*$kt*rs))
+  echo "$r   $&nf   $&nft"
+end
+.endc
+.end

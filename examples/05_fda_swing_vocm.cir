@@ -1,0 +1,41 @@
+* Example 5 - FDOPAMP_FULL: differential output swing vs the output CM voltage
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Gain-of-4 FDA on +/-5 V (Rg = 500, Rf = 2k, 1k differential load), driven
+* single-ended (the other input resistor goes to ground) with a 2.5 V peak
+* 100 kHz sine, so the ideal differential output (10 V peak) clips.
+* Unique model features shown:
+*  - the differential swing limit follows the headroom around Vocm:
+*      |Vod| <= 2*min(Vcc - VHD - Vocm, Vocm - Vee - VLD)
+*    -> 7.6 V peak at Vocm = 0, 4.6 V peak at Vocm = 1.5 V (VHD = VLD = 1.2 V)
+*  - both outputs clip symmetrically and the output CM stays regulated by the
+*    internal CM loop while the DM path is saturated
+.include ../models/fdopamp_full.lib
+Vcc vcc 0 5
+Vee vee 0 -5
+Vin s 0 SIN(0 2.5 100k)
+X1  np nn vcc vee op on vocm FDOPAMP_FULL
+Rga s  np 500
+Rgb 0  nn 500
+Rfa op nn 2k
+Rfb on np 2k
+RL  op on 1k
+Vocm vocm 0 DC 0
+
+.control
+foreach vcm 0 1.5
+  alter Vocm dc = $vcm
+  tran 10n 30u
+  let vod = v(op)-v(on)
+  let voc = (v(op)+v(on))/2
+  meas tran odmax max vod from=10u to=30u
+  meas tran odmin min vod from=10u to=30u
+  meas tran ocmax max voc from=10u to=30u
+  meas tran ocmin min voc from=10u to=30u
+  meas tran opmax max v(op) from=10u to=30u
+  meas tran opmin min v(op) from=10u to=30u
+  echo "Vocm = $vcm V: Vod = $&odmin ... $&odmax V; Vout,cm = $&ocmin ... $&ocmax V; outp = $&opmin ... $&opmax V"
+  wrdata ex05_vocm_{$vcm}.txt v(s) v(op) v(on) vod voc
+end
+plot vod voc
+.endc
+.end

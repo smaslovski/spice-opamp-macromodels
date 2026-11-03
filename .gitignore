@@ -1,0 +1,7 @@
+# simulation outputs written by the example and test decks
+examples/*.txt
+tests/*.txt
+tests/*.dat
+tests/*.log
+*.raw
+__pycache__/

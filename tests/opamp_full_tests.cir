@@ -1,0 +1,142 @@
+* Test deck for OPAMP_FULL  (ngspice)
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+.include ../models/opamp_full.lib
+
+Vcc vcc 0 15
+Vee vee 0 -15
+
+* --- 1. Open-loop gain/phase (DC loop closed by 1 GH / 1 GF) ---------------------
+X1   p1 n1x vcc vee o1 OPAMP_FULL
+Vin1 p1 0 0 AC 1
+Lfb1 o1 n1x 1e9
+Cg1  n1x 0 1e9
+
+* --- 2. Unity-gain follower, +/-5 V step: slew rate and settling ----------------
+X2   p2 o2 vcc vee o2 OPAMP_FULL
+Vin2 p2 0 PULSE(-5 5 10u 1n 1n 40u 100u)
+Rl2  o2 0 2k
+
+* --- 3. Follower, source resistance 100k: output noise, bias current ------------
+X3   p3 o3 vcc vee o3 OPAMP_FULL
+Rs3  p3s p3 100k
+Vin3 p3s 0 0 AC 1
+
+* --- 4. Inverting gain of -10 with 2k load: output swing / clipping --------------
+X4   0 n4 vcc vee o4 OPAMP_FULL
+Rin4 pin4 n4 1k
+Rf4  o4 n4 10k
+Rl4  o4 0 2k
+Vin4 pin4 0 0
+
+* --- 5. Common-mode gain (both inputs driven, DC servo) --------------------------
+X5   pc nc vcc vee o5 OPAMP_FULL
+Vcm5 pc 0 0 AC 1
+Lfb5 o5 nc 1e9
+Cg5  nc pc 1e9
+
+* --- 6. Supply (VCC) rejection ---------------------------------------------------
+Vcc6 vcc6 0 15 AC 1
+Vee6 vee6 0 -15
+X6   0 n6 vcc6 vee6 o6 OPAMP_FULL
+Lfb6 o6 n6 1e9
+Cg6  n6 0 1e9
+
+* --- 7. Supply (VEE) rejection ---------------------------------------------------
+Vcc7 vcc7 0 15
+Vee7 vee7 0 -15 AC 1
+X7   0 n7 vcc7 vee7 o7 OPAMP_FULL
+Lfb7 o7 n7 1e9
+Cg7  n7 0 1e9
+
+* --- 8. Follower into 100 ohm: output current limit, supply currents -----------
+Vcc8 vcc8 0 15
+Vee8 vee8 0 -15
+X8   p8 o8 vcc8 vee8 o8 OPAMP_FULL
+Rl8  o8 0 100
+Vin8 p8 0 0
+
+* --- 9. Follower, no load: input common-mode range ------------------------------
+X9   p9 o9 vcc vee o9 OPAMP_FULL
+Vin9 p9 0 0
+
+.control
+  op
+  echo "--- DC operating point ---"
+  print v(o1) v(o3) v(p3) v(o4)
+  * expected: o1 = VOS, p3 = -(IB+IOS/2)*100k, o3 = p3 + VOS,
+  *           o4 = 11*VOS + (IB-IOS/2)*10k
+  print -i(Vcc8) i(Vee8)
+  * expected (no load current): ICCQ in each rail
+
+  ac dec 20 0.1 100Meg
+  let ad    = vdb(o1)
+  let phd   = 180/pi*cph(o1)
+  let cmrr  = vdb(o1)-vdb(o5)
+  let psrrp = vdb(o1)-vdb(o6)
+  let psrrn = vdb(o1)-vdb(o7)
+  meas ac a0_db   find ad at=0.1
+  meas ac fu      when ad=0
+  meas ac ph_fu   find phd when ad=0
+  let pm = 180+ph_fu
+  print pm
+  meas ac cmrr_dc find cmrr at=0.1
+  meas ac cmrr_1k find cmrr at=1k
+  meas ac psrrp_dc find psrrp at=0.1
+  meas ac psrrn_dc find psrrn at=0.1
+  * Open-loop gain and phase
+  plot ad title 'Open-loop gain (dB)' xlog
+  plot phd title 'Open-loop phase (deg)' xlog
+  * CMRR(f) = Ad/Acm and PSRR(f) = Ad/Avs
+  plot cmrr title 'CMRR (dB)' xlog
+  plot psrrp psrrn title 'PSRR+ and PSRR- (dB)' xlog
+
+  tran 0.05u 100u
+  * slew rate from the 10%..90% transition (8 V); the peak dV/dt is dominated
+  * by the 1 ns input edge coupling through CID and is not a slew rate
+  meas tran t_rise trig v(o2) val=-4 rise=1 targ v(o2) val=4 rise=1
+  meas tran t_fall trig v(o2) val=4 fall=1 targ v(o2) val=-4 fall=1
+  let sr_rise = 8/t_rise/1e6
+  let sr_fall = 8/t_fall/1e6
+  print sr_rise sr_fall
+  * 1 mV settling time after the rising input edge at 10 us
+  meas tran v_final find v(o2) at=48u
+  let vhi = v_final+1m
+  let vlo = v_final-1m
+  meas tran v_peak max v(o2) from=10u to=48u
+  * last time |v(o2)-v_final| leaves the 1 mV band (from above or below)
+  meas tran t_hi when v(o2)=vhi cross=last from=10u to=48u
+  meas tran t_lo when v(o2)=vlo cross=last from=10u to=48u
+  let t_settle = 0.5*(t_hi+t_lo+abs(t_hi-t_lo)) - 10u
+  print t_settle
+  plot v(p2) v(o2) title 'Follower step (slew rate)'
+
+  dc Vin4 -3 3 0.05
+  meas dc vo_max max v(o4)
+  meas dc vo_min min v(o4)
+  plot v(o4) title 'Inverting gain -10: output swing'
+
+  dc Vin8 -5 5 0.05
+  let iload = v(o8)/100
+  meas dc i_src max iload
+  meas dc i_snk min iload
+  plot v(o8) title 'Follower into 100 ohm: current limit'
+  let icc8 = -i(Vcc8)
+  let iee8 = i(Vee8)
+  plot icc8 iee8 title 'Supply currents vs load current'
+
+  dc Vin9 -15 15 0.05
+  plot v(o9) v(p9) title 'Follower: input common-mode range'
+
+  noise v(o3) Vin3 dec 20 1 1Meg
+  * the spectral-density plot is the one before the integrated-noise plot
+  setplot previous
+  * expected for the default parameters: en^2*(1+FCEN/f) + (in*Rs)^2 + 4kT*Rs
+  let en_exp = sqrt((20n)^2*(1+200/frequency) + (0.5p*100k)^2 + 4*1.380649e-23*300.15*100k)
+  let ratio = onoise_spectrum/en_exp
+  * points 20, 60, 80 of the dec-20 sweep are 10 Hz, 1 kHz, 10 kHz
+  print frequency[20] onoise_spectrum[20] en_exp[20] ratio[20]
+  print frequency[60] onoise_spectrum[60] en_exp[60] ratio[60]
+  print frequency[80] onoise_spectrum[80] en_exp[80] ratio[80]
+  plot onoise_spectrum en_exp loglog title 'Output noise density (V/rtHz), model vs expected'
+.endc
+.end

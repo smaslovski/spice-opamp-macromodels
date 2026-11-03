@@ -1,0 +1,201 @@
+*==============================================================================
+* FDOPAMP_FULL - behavioural fully differential op-amp macromodel (ngspice)
+*
+* Copyright (c) 2026 Stanislav Maslovski
+* SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
+* Version 1.0 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+*
+* Pins: inp inn vcc vee outp outn vocm
+*   outp is the non-inverted output (in phase with inp), outn the inverted one.
+*   vocm sets the output common-mode voltage. Left open, it floats to
+*   mid-supply through an internal divider (2*RVOCM to each rail).
+*
+* DIFFERENTIAL-MODE (DM) PATH  (same structure as OPAMP_FULL)
+*   - DC gain A0, dominant pole, GBW, two extra poles (FP2, FP3)
+*   - input stage tanh() -> differential output slew rate SR
+*   - input CM range window, differential clamp (optional), input R/C
+*   - VOS, IB/IOS, CMRR(f), PSRR(f), white + 1/f voltage noise, current noise
+* COMMON-MODE (CM) LOOP  (internal CMFB)
+*   - senses the output CM (V(outp)+V(outn))/2 and compares it with V(vocm)
+*   - CM error amplifier: DC gain A0CM, unity-gain frequency GBWCM, second
+*     pole FPCM2, output CM slew rate SRCM, CM offset VOSCM
+*   - CMRR, PSRR and the DM gain do not affect it (ideal CM/DM separation)
+* OUTPUT STAGES (one per output, as in OPAMP_FULL)
+*   - V(outp) = Vcm + Vd/2, V(outn) = Vcm - Vd/2 behind ROUT each
+*   - swing limits VHD/VLD, current limits ISRC/ISNK, crossover VXO, COUT
+*   - supply current = quiescent + load currents from the right rail
+*
+* Defaults approximate a generic +/-5 V, 100 MHz bipolar FDA.
+* Units: SR, SRCM in V/s. CMRR/PSRR as ratios (31.6k = 90 dB).
+*
+* Notes
+*   - SR is the DIFFERENTIAL output slew rate (each output slews at SR/2).
+*   - The DM node n1 holds the differential output voltage. It is clamped to
+*     +/-2*min(V(vcc)-VHD-Vocm, Vocm-V(vee)-VLD), so the outputs saturate
+*     symmetrically and recover quickly.
+*   - FDOPAMP_CORE exposes the single-ended CM control path through the pins
+*     cmo (CM amplifier output) and cmi (output-stage CM input), so that the
+*     CM loop can be opened for loop-gain tests. FDOPAMP_FULL joins them.
+*==============================================================================
+
+*------------------------------------------------------------------------------
+* FDZCPL : out = K * (1 + s/(2*pi*FZ)) * in   (same as ZCPL in opamp_full.lib)
+*------------------------------------------------------------------------------
+.subckt FDZCPL in out PARAMS: K=1u FZ=1k FHI=2G
+.param TAUZ={1/(6.283185307*FZ)} CD=1n
+Ek  na 0 in 0 {K}
+Cd  in nx {CD}
+Gd  nx nv nx nv {6.283185307*FHI*CD}
+Vs  nv 0 0
+Hd  out na Vs {K*TAUZ/CD}
+.ends FDZCPL
+
+*------------------------------------------------------------------------------
+.subckt FDOPAMP_CORE inp inn vcc vee outp outn vocm cmo cmi
++ PARAMS:
++ A0=100k GBW=100Meg SR=200Meg FP2=300Meg FP3=1G
++ VOS=1m IB=2u IOS=0.1u
++ RID=1Meg CID=1p RIC=100Meg CIC=2p
++ CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
++ VCMN={0.5*(VCCN+VEEN)}
++ ENOISE=5n FCEN=1k INOISE=1p
++ ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
++ ROUT=10 ISRC=50m ISNK=50m VXO=0 COUT=1p
++ VCLMP=100 RCLMP=100
++ A0CM=10k GBWCM=50Meg FPCM2=200Meg SRCM=100Meg VOSCM=1m
++ RVOCM=50k CVOCM=1p
+
+* ---- derived constants -------------------------------------------------------
+.param PI2=6.283185307
+.param C1V=1p
+.param IMAXV={SR*C1V}
+.param GM0={PI2*GBW*C1V}
+.param R1V={A0/GM0}
+.param ICMV={SRCM*C1V}
+.param GMC={PI2*GBWCM*C1V}
+.param RCV={A0CM/GMC}
+.param VNTH={sqrt(4*1.380649e-23*300.15*1e3)}
+.param IFL=10m
+.param VTN={1.380649e-23*300.15/1.602176634e-19}
+.param KFV={ENOISE*ENOISE*FCEN*IFL/(VTN*VTN)}
+.param ESH2={4*1.602176634e-19*VTN*VTN/IFL}
+.param GENV={sqrt(max(ENOISE*ENOISE-ESH2,0))/VNTH}
+.param GNI={INOISE/VNTH}
+
+* ---- input network (noiseless; RID behind the series error voltage) ----------
+Gid  inp inn vd 0 {1/RID}
+Cid  inp inn {CID}
+Gic1 inp 0 inp 0 {1/(2*RIC)}
+Gic2 inn 0 inn 0 {1/(2*RIC)}
+Cic1 inp 0 {CIC/2}
+Cic2 inn 0 {CIC/2}
+Ibp  inp 0 DC {IB+IOS/2}
+Ibn  inn 0 DC {IB-IOS/2}
+Dp1  inp inn DIN
+Dp2  inn inp DIN
+.model DIN D(IS=1e-15 N={VCLMP/(VTN*log(1e-3/1e-15))} RS={RCLMP})
+
+* ---- noise sources -------------------------------------------------------------
+Rnv  nnv 0 1e3
+Rnp  nnp 0 1e3
+Rnn  nnn 0 1e3
+Gnp  0 inp nnp 0 {GNI}
+Gnn  0 inn nnn 0 {GNI}
+Ifa  0 nfa DC {IFL}
+Dfa  nfa 0 DFLK
+Ifb  0 nfb DC {IFL}
+Dfb  nfb 0 DQ
+Efl  nfl 0 nfa nfb 1
+.model DFLK D(IS=1e-14 N=1 KF={KFV} AF=1)
+.model DQ   D(IS=1e-14 N=1)
+
+* ---- CMRR and PSRR coupling into the DM input ----------------------------------
+Bcm  ncm0 0 V = 0.5*(V(inp)+V(inn))-{VCMN}
+Xcm  ncm0 ncm FDZCPL PARAMS: K={1/CMRR} FZ={FCMRR}
+Bps1 nps1i 0 V = V(vcc)-{VCCN}
+Xps1 nps1i nps1 FDZCPL PARAMS: K={1/PSRRP} FZ={FPSRR}
+Bps2 nps2i 0 V = V(vee)-{VEEN}
+Xps2 nps2i nps2 FDZCPL PARAMS: K={1/PSRRN} FZ={FPSRR}
+
+Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+{GENV}*V(nnv)+V(nfl)
+Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-{ICMLO})/{VK}))*(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn)))/{VK})),1e-3)
+
+* ---- DM gain node: n1 = differential output voltage ---------------------------
+Bgm  0 n1 I = {IMAXV}*V(nwin)*tanh({GM0}*V(vd)/{IMAXV})
+G1   n1 0 n1 0 {1/R1V}
+C1   n1 0 {C1V}
+* symmetric differential swing limit set by the headroom around Vocm
+Bdlim ndl 0 V = max(2*min(V(vcc)-{VHD}-V(vocm), V(vocm)-V(vee)-{VLD}), 10m)
+Bclp n1 0 I = {IMAXV/1e-3}*(max(V(n1)-V(ndl),0)+min(V(n1)+V(ndl),0))
+G2   0 n2 n1 0 1m
+G2r  n2 0 n2 0 1m
+C2   n2 0 {1/(PI2*FP2*1e3)}
+G3   0 n3 n2 0 1m
+G3r  n3 0 n3 0 1m
+C3   n3 0 {1/(PI2*FP3*1e3)}
+
+* ---- Vocm pin: noiseless divider to mid-supply ------------------------------------
+Gvo1 vcc vocm vcc vocm {1/(2*RVOCM)}
+Gvo2 vocm vee vocm vee {1/(2*RVOCM)}
+Cvo  vocm 0 {CVOCM}
+
+* ---- CM loop: error amplifier (integrator + pole) -----------------------------
+Bocs nocs 0 V = 0.5*(V(outp)+V(outn))
+Bgmc 0 nc1 I = {ICMV}*tanh({GMC}*(V(vocm)+{VOSCM}-V(nocs))/{ICMV})
+Gc1  nc1 0 nc1 0 {1/RCV}
+Cc1  nc1 0 {C1V}
+Bchi nchi 0 V = V(vcc)-{VHD}
+Bclo nclo 0 V = V(vee)+{VLD}
+Bcclp nc1 0 I = {ICMV/1e-3}*(max(V(nc1)-V(nchi),0)+min(V(nc1)-V(nclo),0))
+Gc2  0 cmo nc1 0 1m
+Gc2r cmo 0 cmo 0 1m
+Cc2  cmo 0 {1/(PI2*FPCM2*1e3)}
+
+* ---- output stages ----------------------------------------------------------------
+Bdp  ndp 0 V = V(cmi)+0.5*V(n3)
+Bdn  ndn 0 V = V(cmi)-0.5*V(n3)
+Bicp nicp 0 V = min({ISRC},max(-{ISNK},((V(ndp)-V(outp))-0.5*{VXO}*tanh((V(ndp)-V(outp))/({VXO}+1e-9)))/{ROUT}))
+Bicn nicn 0 V = min({ISRC},max(-{ISNK},((V(ndn)-V(outn))-0.5*{VXO}*tanh((V(ndn)-V(outn))/({VXO}+1e-9)))/{ROUT}))
+Bsrp vcc outp I = 0.5*(V(nicp)+sqrt(V(nicp)*V(nicp)+1e-12))
+Bskp outp vee I = 0.5*(sqrt(V(nicp)*V(nicp)+1e-12)-V(nicp))
+Bsrn vcc outn I = 0.5*(V(nicn)+sqrt(V(nicn)*V(nicn)+1e-12))
+Bskn outn vee I = 0.5*(sqrt(V(nicn)*V(nicn)+1e-12)-V(nicn))
+Iq   vcc vee DC {ICCQ}
+Coutp outp 0 {COUT}
+Coutn outn 0 {COUT}
+* 100 Mohm noiseless leakage on each output: keeps the transient time step
+* well-behaved when an output has no resistive load at all
+Glkp outp 0 outp 0 1e-8
+Glkn outn 0 outn 0 1e-8
+.ends FDOPAMP_CORE
+
+*------------------------------------------------------------------------------
+* FDOPAMP_FULL: the normal model (CM loop closed internally).
+* Pass parameters as usual, e.g.  X1 ... FDOPAMP_FULL PARAMS: GBW=200Meg
+*------------------------------------------------------------------------------
+.subckt FDOPAMP_FULL inp inn vcc vee outp outn vocm
++ PARAMS:
++ A0=100k GBW=100Meg SR=200Meg FP2=300Meg FP3=1G
++ VOS=1m IB=2u IOS=0.1u
++ RID=1Meg CID=1p RIC=100Meg CIC=2p
++ CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
++ VCMN={0.5*(VCCN+VEEN)}
++ ENOISE=5n FCEN=1k INOISE=1p
++ ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
++ ROUT=10 ISRC=50m ISNK=50m VXO=0 COUT=1p
++ VCLMP=100 RCLMP=100
++ A0CM=10k GBWCM=50Meg FPCM2=200Meg SRCM=100Meg VOSCM=1m
++ RVOCM=50k CVOCM=1p
+Xc inp inn vcc vee outp outn vocm ncm ncm FDOPAMP_CORE PARAMS:
++ A0={A0} GBW={GBW} SR={SR} FP2={FP2} FP3={FP3}
++ VOS={VOS} IB={IB} IOS={IOS}
++ RID={RID} CID={CID} RIC={RIC} CIC={CIC}
++ CMRR={CMRR} FCMRR={FCMRR} PSRRP={PSRRP} PSRRN={PSRRN} FPSRR={FPSRR} VCCN={VCCN} VEEN={VEEN}
++ VCMN={VCMN}
++ ENOISE={ENOISE} FCEN={FCEN} INOISE={INOISE}
++ ICCQ={ICCQ} VHD={VHD} VLD={VLD} ICMHI={ICMHI} ICMLO={ICMLO} VK={VK}
++ ROUT={ROUT} ISRC={ISRC} ISNK={ISNK} VXO={VXO} COUT={COUT}
++ VCLMP={VCLMP} RCLMP={RCLMP}
++ A0CM={A0CM} GBWCM={GBWCM} FPCM2={FPCM2} SRCM={SRCM} VOSCM={VOSCM}
++ RVOCM={RVOCM} CVOCM={CVOCM}
+.ends FDOPAMP_FULL

@@ -1,0 +1,95 @@
+* Example 2 - FDOPAMP_FULL: differential- and common-mode loop gains of a
+* gain-of-4 FDA (Rg = 500, Rf = 2k, 1k differential load) with a capacitive
+* load CL from EACH output to ground.
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unique model feature shown: the CM feedback loop is internal to the part,
+* so it cannot be opened at the pins. FDOPAMP_CORE brings the CM control path
+* out to two pins (cmo -> cmi); FDOPAMP_FULL simply joins them. Opening that
+* hook gives the CM loop gain; antisymmetric injection at the outputs gives
+* the DM loop gain. Both use Middlebrook double injection, combined in the
+* singularity-free form 1/(1+T) = 1/(1+Tv) + (1 + i).
+.include ../models/fdopamp_full.lib
+.param CL=1p
+Vcc vcc 0 5
+Vee vee 0 -5
+
+* --- DM, voltage injection: +/-0.5 V in series with each output -----------------
+XDMV np1 nn1 vcc vee op1 on1 vo1 cm1 cm1 FDOPAMP_CORE
+Rga1 0 np1 500
+Rgb1 0 nn1 500
+Rfa1 fp1 nn1 2k
+Rfb1 fn1 np1 2k
+Rl1  fp1 fn1 1k
+Cla1 fp1 0 {CL}
+Clb1 fn1 0 {CL}
+Vxp1 op1 fp1 DC 0 AC 0.5
+Vxn1 on1 fn1 DC 0 AC 0.5 180
+
+* --- DM, current injection: +/-0.5 A into the load side, 0 V sources = ammeters
+XDMI np2 nn2 vcc vee op2 on2 vo2 cm2 cm2 FDOPAMP_CORE
+Rga2 0 np2 500
+Rgb2 0 nn2 500
+Rfa2 fp2 nn2 2k
+Rfb2 fn2 np2 2k
+Rl2  fp2 fn2 1k
+Cla2 fp2 0 {CL}
+Clb2 fn2 0 {CL}
+Vxp2 op2 fp2 DC 0
+Vxn2 on2 fn2 DC 0
+Iip2 0 fp2 DC 0 AC 0.5
+Iin2 0 fn2 DC 0 AC 0.5 180
+
+* --- CM, voltage injection at the internal hook cmo -> cmi ---------------------
+XCMV np3 nn3 vcc vee op3 on3 vo3 co3 ci3 FDOPAMP_CORE
+Rga3 0 np3 500
+Rgb3 0 nn3 500
+Rfa3 op3 nn3 2k
+Rfb3 on3 np3 2k
+Rl3  op3 on3 1k
+Cla3 op3 0 {CL}
+Clb3 on3 0 {CL}
+Vh3  co3 ci3 DC 0 AC 1
+
+* --- CM, current injection at the hook ------------------------------------------
+XCMI np4 nn4 vcc vee op4 on4 vo4 co4 ci4 FDOPAMP_CORE
+Rga4 0 np4 500
+Rgb4 0 nn4 500
+Rfa4 op4 nn4 2k
+Rfb4 on4 np4 2k
+Rl4  op4 on4 1k
+Cla4 op4 0 {CL}
+Clb4 on4 0 {CL}
+Vh4  co4 ci4 DC 0
+Ih4  0 ci4 DC 0 AC 1
+
+.control
+foreach cl 1p 220p 1n
+  alter Cla1 = $cl
+  alter Clb1 = $cl
+  alter Cla2 = $cl
+  alter Clb2 = $cl
+  alter Cla3 = $cl
+  alter Clb3 = $cl
+  alter Cla4 = $cl
+  alter Clb4 = $cl
+  ac dec 50 1k 3G
+  let tv_dm = -(v(op1)-v(on1))/(v(fp1)-v(fn1))
+  let t_dm  = 1/(1/(1+tv_dm)+1+(i(Vxp2)-i(Vxn2)))-1
+  let tv_cm = -v(co3)/v(ci3)
+  let t_cm  = 1/(1/(1+tv_cm)+1+i(Vh4))-1
+  let dmdb = db(t_dm)
+  let cmdb = db(t_cm)
+  let dmph = cph(t_dm)*180/pi
+  let cmph = cph(t_cm)*180/pi
+  meas ac fdm when dmdb=0 fall=last
+  meas ac pdm find dmph at=fdm
+  meas ac fcm when cmdb=0 fall=last
+  meas ac pcm find cmph at=fcm
+  let pmdm = 180 + pdm
+  let pmcm = 180 + pcm
+  echo "CL = $cl per output: DM fc = $&fdm Hz, PM = $&pmdm deg;  CM fc = $&fcm Hz, PM = $&pmcm deg"
+  wrdata ex02_loopgain_{$cl}.txt dmdb dmph cmdb cmph
+end
+plot dmdb cmdb xlog
+.endc
+.end

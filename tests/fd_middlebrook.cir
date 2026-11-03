@@ -1,0 +1,146 @@
+* Middlebrook/Tian loop gain of a fully differential amplifier (ngspice)
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Rf = 2k (outp -> inn) and 2k (outn -> inp), Rg = 500, 1k load
+.include ../models/fdopamp_full.lib
+Vcc vcc 0 5
+Vee vee 0 -5
+
+* --- copy DMV
+XDMV np_DMV nn_DMV vcc vee op_DMV on_DMV vo_DMV cm_DMV cm_DMV FDOPAMP_CORE
+Rga_DMV 0 np_DMV 500
+Rgb_DMV 0 nn_DMV 500
+Rfa_DMV fp_DMV nn_DMV 2k
+Rfb_DMV fn_DMV np_DMV 2k
+Rl_DMV op_DMV on_DMV 1k
+Vxp_DMV op_DMV fp_DMV DC 0 AC 0.5
+Vxn_DMV on_DMV fn_DMV DC 0 AC 0.5 180
+
+* --- copy DMI
+XDMI np_DMI nn_DMI vcc vee op_DMI on_DMI vo_DMI cm_DMI cm_DMI FDOPAMP_CORE
+Rga_DMI 0 np_DMI 500
+Rgb_DMI 0 nn_DMI 500
+Rfa_DMI fp_DMI nn_DMI 2k
+Rfb_DMI fn_DMI np_DMI 2k
+Rl_DMI op_DMI on_DMI 1k
+Vxp_DMI op_DMI fp_DMI DC 0 AC 0
+Vxn_DMI on_DMI fn_DMI DC 0 AC 0
+Iip_DMI 0 fp_DMI DC 0 AC 0.5
+Iin_DMI 0 fn_DMI DC 0 AC 0.5 180
+
+* --- copy CMV
+XCMV np_CMV nn_CMV vcc vee op_CMV on_CMV vo_CMV co_CMV ci_CMV FDOPAMP_CORE
+Rga_CMV 0 np_CMV 500
+Rgb_CMV 0 nn_CMV 500
+Rfa_CMV op_CMV nn_CMV 2k
+Rfb_CMV on_CMV np_CMV 2k
+Rl_CMV op_CMV on_CMV 1k
+Vh_CMV co_CMV ci_CMV DC 0 AC 1
+
+* --- copy CMI
+XCMI np_CMI nn_CMI vcc vee op_CMI on_CMI vo_CMI co_CMI ci_CMI FDOPAMP_CORE
+Rga_CMI 0 np_CMI 500
+Rgb_CMI 0 nn_CMI 500
+Rfa_CMI op_CMI nn_CMI 2k
+Rfb_CMI on_CMI np_CMI 2k
+Rl_CMI op_CMI on_CMI 1k
+Vh_CMI co_CMI ci_CMI DC 0 AC 0
+Ih_CMI 0 ci_CMI DC 0 AC 1
+
+* --- copy CPV
+XCPV np_CPV nn_CPV vcc vee op_CPV on_CPV vo_CPV cm_CPV cm_CPV FDOPAMP_CORE
+Rga_CPV 0 np_CPV 500
+Rgb_CPV 0 nn_CPV 500
+Rfa_CPV fp_CPV nn_CPV 2k
+Rfb_CPV fn_CPV np_CPV 2k
+Rl_CPV op_CPV on_CPV 1k
+Vxp_CPV op_CPV fp_CPV DC 0 AC 0.5
+Vxn_CPV on_CPV fn_CPV DC 0 AC 0.5
+
+* --- copy CPI
+XCPI np_CPI nn_CPI vcc vee op_CPI on_CPI vo_CPI cm_CPI cm_CPI FDOPAMP_CORE
+Rga_CPI 0 np_CPI 500
+Rgb_CPI 0 nn_CPI 500
+Rfa_CPI fp_CPI nn_CPI 2k
+Rfb_CPI fn_CPI np_CPI 2k
+Rl_CPI op_CPI on_CPI 1k
+Vxp_CPI op_CPI fp_CPI DC 0 AC 0
+Vxn_CPI on_CPI fn_CPI DC 0 AC 0
+Iip_CPI 0 fp_CPI DC 0 AC 0.5
+Iin_CPI 0 fn_CPI DC 0 AC 0.5
+
+* --- copy DMR
+XDMR np_DMR nn_DMR vcc vee op_DMR on_DMR vo_DMR cm_DMR cm_DMR FDOPAMP_CORE
+Rga_DMR 0 np_DMR 500
+Rgb_DMR 0 nn_DMR 500
+Rfa_DMR fp_DMR nn_DMR 2k
+Rfb_DMR fn_DMR np_DMR 2k
+Rl_DMR op_DMR on_DMR 1k
+Lbp_DMR op_DMR fp_DMR 1e9
+Lbn_DMR on_DMR fn_DMR 1e9
+Cbp_DMR fp_DMR sp_DMR 1e9
+Cbn_DMR fn_DMR sn_DMR 1e9
+Vsp_DMR sp_DMR 0 DC 0 AC 0.5
+Vsn_DMR sn_DMR 0 DC 0 AC 0.5 180
+
+* --- copy CMR
+XCMR np_CMR nn_CMR vcc vee op_CMR on_CMR vo_CMR co_CMR ci_CMR FDOPAMP_CORE
+Rga_CMR 0 np_CMR 500
+Rgb_CMR 0 nn_CMR 500
+Rfa_CMR op_CMR nn_CMR 2k
+Rfb_CMR on_CMR np_CMR 2k
+Rl_CMR op_CMR on_CMR 1k
+Lb_CMR co_CMR ci_CMR 1e9
+Cb_CMR ci_CMR s_CMR 1e9
+Vs_CMR s_CMR 0 DC 0 AC 1
+
+.control
+  set noaskquit
+  ac dec 20 10 10G
+  * --- DM: differential quantities ---
+  let tv_dm = -(v(op_DMV)-v(on_DMV))/(v(fp_DMV)-v(fn_DMV))
+  let id_dm = i(Vxp_DMI)-i(Vxn_DMI)
+  * Middlebrook in singularity-free form: 1/(1+T) = 1/(1+Tv) + 1/(1+Ti),
+  * with 1/(1+Ti) = 1 + i  (i = current returned by the driver per unit injected)
+  let t_dm  = 1/(1/(1+tv_dm)+1+id_dm)-1
+  let r_dm  = -(v(op_DMR)-v(on_DMR))/(v(fp_DMR)-v(fn_DMR))
+  * --- CM at the internal hook (single-ended) ---
+  let tv_cm = -v(co_CMV)/v(ci_CMV)
+  let ih    = i(Vh_CMI)
+  let t_cm  = 1/(1/(1+tv_cm)+1+ih)-1
+  let r_cm  = -v(co_CMR)/v(ci_CMR)
+  * --- CM injected at the output pins: average quantities ---
+  let tv_cp = -(v(op_CPV)+v(on_CPV))/(v(fp_CPV)+v(fn_CPV))
+  let ic_cp = 0.5*(i(Vxp_CPI)+i(Vxn_CPI))
+  let t_cp  = 1/(1/(1+tv_cp)+1+2*ic_cp)-1
+  * --- DM -> CM coupling at the injection point (mismatch indicator) ---
+  let k_dc  = 0.5*(v(fp_DMV)+v(fn_DMV))/(v(fp_DMV)-v(fn_DMV))
+  let tdmdb = db(t_dm)
+  let tcmdb = db(t_cm)
+  let tcpdb = db(t_cp)
+  let rdmdb = db(r_dm)
+  let rcmdb = db(r_cm)
+  let tdmph = 180/pi*cph(t_dm)
+  let tcmph = 180/pi*cph(t_cm)
+  let rdmph = 180/pi*cph(r_dm)
+  let rcmph = 180/pi*cph(r_cm)
+  meas ac dm_lf    find tdmdb at=1k
+  meas ac dm_fc    when tdmdb=0
+  meas ac dm_ph    find tdmph when tdmdb=0
+  meas ac dmr_fc   when rdmdb=0
+  meas ac dmr_ph   find rdmph when rdmdb=0
+  meas ac cm_lf    find tcmdb at=1k
+  meas ac cm_fc    when tcmdb=0
+  meas ac cm_ph    find tcmph when tcmdb=0
+  meas ac cmr_fc   when rcmdb=0
+  meas ac cmr_ph   find rcmph when rcmdb=0
+  meas ac cp_lf    find tcpdb at=1k
+  meas ac cp_max   max tcpdb
+  let kdb = db(k_dc)
+  meas ac kdc_1m   find kdb at=1Meg
+  let errdm = abs(t_dm/r_dm-1)
+  let errcm = abs(t_cm/r_cm-1)
+  meas ac errdm_max max errdm
+  meas ac errcm_max max errcm
+  wrdata fd_middlebrook.dat t_dm r_dm t_cm r_cm t_cp tv_dm tv_cm
+.endc
+.end

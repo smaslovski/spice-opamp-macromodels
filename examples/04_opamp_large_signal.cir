@@ -1,0 +1,66 @@
+* Example 4 - OPAMP_FULL: large-signal behaviour on +/-15 V
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unique model features shown:
+*  a) slew rate from the tanh() input stage: the output slews at SR = 0.5 V/us,
+*     and distortion rises smoothly as the signal approaches the full-power
+*     bandwidth SR/(2*pi*Vp) (8 kHz for 10 V peak) - no hard limiter kink
+*  b) output swing limit (VHD/VLD) with a soft gain-node clamp: clean clipping
+*     and immediate recovery, no sticking or phase reversal
+*  c) output current limit (ISRC/ISNK) and supply current that follows the load
+.include ../models/opamp_full.lib
+Vcc vcc 0 15
+Vee vee 0 -15
+
+* a) follower, 10 V peak sine, 10k load
+Va  pa 0 SIN(0 10 1k)
+XA  pa oa vcc vee oa OPAMP_FULL
+RLa oa 0 10k
+
+* b) inverting gain -10, 2 V peak 1 kHz input (overdrives the output), 2k load
+Vb  pb 0 SIN(0 2 1k)
+Rib pb nb 1k
+Rfb ob nb 10k
+XB  0 nb vcc vee ob OPAMP_FULL
+RLb ob 0 2k
+
+* c) follower driving 100 ohm, 5 V peak 1 kHz: current limit at 25 mA
+Vc  pc 0 SIN(0 5 1k)
+XC  pc oc vccc veec oc OPAMP_FULL
+RLc oc 0 100
+Vccc vcc vccc 0
+Veec veec vee 0
+
+.control
+* --- a) THD vs frequency at 10 V peak ----------------------------------------
+echo "a) THD vs frequency (follower, 10 V peak, 10k load):"
+foreach f 1k 2k 4k 6k 7k 8k 10k
+  alter @Va[sin] = [ 0 10 $f ]
+  tran 0.5u 6m
+  echo "f = $f"
+  fourier $f v(oa)
+end
+* waveforms at 4 kHz and 12 kHz for the plot
+alter @Va[sin] = [ 0 10 4k ]
+tran 0.2u 1.5m
+wrdata ex04a_4k.txt v(pa) v(oa)
+alter @Va[sin] = [ 0 10 12k ]
+tran 0.2u 0.5m
+let dvdt = deriv(v(oa))
+let srp = vecmax(dvdt)/1e6
+let srn = vecmin(dvdt)/1e6
+echo "a) slew rate at 12 kHz: +$&srp / $&srn V/us"
+wrdata ex04a_12k.txt v(pa) v(oa)
+* --- b) clipping and recovery, c) current limit ----------------------------------
+tran 1u 3m
+meas tran vbmax max v(ob) from=1m to=3m
+meas tran vbmin min v(ob) from=1m to=3m
+meas tran icmax max i(Vccc) from=1m to=3m
+meas tran iemax max i(Veec) from=1m to=3m
+let ilmax = vecmax(v(oc))/100
+meas tran vcmax max v(oc) from=1m to=3m
+echo "b) clipping levels (2k load): $&vbmax V / $&vbmin V"
+echo "c) 100-ohm load: peak output $&vcmax V (25 mA limit -> 2.5 V); peak supply currents: Icc $&icmax A, Iee $&iemax A"
+wrdata ex04bc.txt v(pb) v(ob) v(oc) i(Vccc) i(Veec)
+plot v(ob) -10*v(pb)
+.endc
+.end

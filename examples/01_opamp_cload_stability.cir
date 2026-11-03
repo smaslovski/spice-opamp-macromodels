@@ -1,0 +1,103 @@
+* Example 1 - OPAMP_FULL: unity-gain follower driving a capacitive load
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Loop gain by Middlebrook double injection at the op-amp output pin:
+*   VI (series voltage) between the output pin (o) and the load/feedback node (f),
+*   II (shunt current) into f.  Two AC runs, combined in the control block.
+* Unique model features shown:
+*   - ROUT + CL output pole
+*   - class-AB crossover: at idle (|Iout| << VXO/ROUT) the small-signal output
+*     resistance is 2*ROUT, so the phase margin depends on the DC load current
+.include ../models/opamp_full.lib
+.param CL=1n RLDC=1e12
+Vcc vcc 0 15
+Vee vee 0 -15
+Vin in 0 0
+X1  in f vcc vee o OPAMP_FULL
+VI  o f DC 0 AC 1
+II  0 f DC 0 AC 0
+CL  f 0 {CL}
+* optional DC load to -15 V: RLDC = 15k gives 1 mA output current
+RLDC f vee {RLDC}
+
+.control
+let cases = vector(3)
+* case 0: CL = 3 pF (no load capacitor), case 1: 1 nF idle, case 2: 1 nF + 1 mA
+foreach c 0 1 2
+  if $c = 0
+    alter CL = 3p
+    alter RLDC = 1e12
+  end
+  if $c = 1
+    alter CL = 1n
+    alter RLDC = 1e12
+  end
+  if $c = 2
+    alter CL = 1n
+    alter RLDC = 15k
+  end
+  alter @VI[acmag] = 1
+  alter @II[acmag] = 0
+  ac dec 50 10 100Meg
+  alter @VI[acmag] = 0
+  alter @II[acmag] = 1
+  ac dec 50 10 100Meg
+end
+* plots ac1..ac6: (ac1,ac2) case 0, (ac3,ac4) case 1, (ac5,ac6) case 2
+setplot ac6
+let tv0 = -ac1.v(o)/ac1.v(f)
+let io0 = ac2.vi#branch
+let t0  = (tv0*(-io0/(io0+1)) - 1)/(tv0 + (-io0/(io0+1)) + 2)
+let tv1 = -ac3.v(o)/ac3.v(f)
+let io1 = ac4.vi#branch
+let t1  = (tv1*(-io1/(io1+1)) - 1)/(tv1 + (-io1/(io1+1)) + 2)
+let tv2 = -ac5.v(o)/ac5.v(f)
+let io2 = ac6.vi#branch
+let t2  = (tv2*(-io2/(io2+1)) - 1)/(tv2 + (-io2/(io2+1)) + 2)
+let db0 = db(t0)
+let db1 = db(t1)
+let db2 = db(t2)
+let ph0 = cph(t0)*180/pi
+let ph1 = cph(t1)*180/pi
+let ph2 = cph(t2)*180/pi
+let tvdb1 = db(tv1)
+meas ac fc0 when db0=0 fall=last
+meas ac p0 find ph0 at=fc0
+meas ac fc1 when db1=0 fall=last
+meas ac p1 find ph1 at=fc1
+meas ac fc2 when db2=0 fall=last
+meas ac p2 find ph2 at=fc2
+let pm0 = 180 + p0
+let pm1 = 180 + p1
+let pm2 = 180 + p2
+echo "CL = 3 pF          : fc = $&fc0 Hz, PM = $&pm0 deg"
+echo "CL = 1 nF, idle    : fc = $&fc1 Hz, PM = $&pm1 deg"
+echo "CL = 1 nF, 1 mA DC : fc = $&fc2 Hz, PM = $&pm2 deg"
+wrdata ex01_loopgain.txt db0 ph0 db1 ph1 db2 ph2 tvdb1
+plot db0 db1 db2 xlog ylabel 'dB'
+plot ph0 ph1 ph2 xlog ylabel 'deg'
+
+* small-signal step responses (10 mV) for the two 1 nF cases
+alter @VI[acmag] = 0
+alter @II[acmag] = 0
+alter @Vin[pulse] = [ 0 10m 2u 1n 1n 20u 40u ]
+alter CL = 1n
+alter RLDC = 1e12
+tran 5n 12u
+meas tran v0 find v(f) at=1.9u
+meas tran pk max v(f) from=2u to=12u
+meas tran fin find v(f) at=11.9u
+let os = (pk - fin)/(fin - v0)*100
+set os_idle = "$&os"
+wrdata ex01_step_idle.txt v(f)
+alter RLDC = 15k
+tran 5n 12u
+meas tran v0 find v(f) at=1.9u
+meas tran pk max v(f) from=2u to=12u
+meas tran fin find v(f) at=11.9u
+let os = (pk - fin)/(fin - v0)*100
+set os_load = "$&os"
+wrdata ex01_step_load.txt v(f)
+echo "10 mV step overshoot, CL = 1 nF: idle $os_idle %, 1 mA load $os_load %"
+plot v(f)
+.endc
+.end

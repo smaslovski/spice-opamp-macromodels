@@ -1,0 +1,144 @@
+* Test deck for FDOPAMP_FULL (ngspice)
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+.include ../models/fdopamp_full.lib
+
+Vcc vcc 0 5
+Vee vee 0 -5
+
+* --- 1. Open-loop DM gain (DC loop closed by 1 GH, inputs AC-driven via 1 GF) ----
+X1   np1 nn1 vcc vee op1 on1 vo1 FDOPAMP_FULL
+Lf1a op1 nn1 1e9
+Lf1b on1 np1 1e9
+Cg1a np1 sp1 1e9
+Cg1b nn1 sn1 1e9
+Vs1p sp1 0 DC 0 AC 0.5
+Vs1n sn1 0 DC 0 AC 0.5 180
+
+* --- 2. Open-loop DM output for an input CM signal (CMRR) ----------------------------
+X2   np2 nn2 vcc vee op2 on2 vo2 FDOPAMP_FULL
+Lf2a op2 nn2 1e9
+Lf2b on2 np2 1e9
+Cg2a np2 sc2 1e9
+Cg2b nn2 sc2 1e9
+Vs2  sc2 0 DC 0 AC 1
+
+* --- 3. Open-loop DM output for a VCC signal (PSRR+) --------------------------------
+Vcc3 vcc3 0 5 AC 1
+X3   np3 nn3 vcc3 vee op3 on3 vo3 FDOPAMP_FULL
+Lf3a op3 nn3 1e9
+Lf3b on3 np3 1e9
+Cg3a np3 0 1e9
+Cg3b nn3 0 1e9
+
+* --- 4. Closed-loop amplifier, gain 4 (Rg=500, Rf=2k), 1k differential load -----------
+*        balanced input from one source (Vin4) via a noiseless inverter
+X4   np4 nn4 vcc vee op4 on4 vo4 FDOPAMP_FULL
+Rg4a sp4 np4 500
+Rg4b sn4 nn4 500
+Rf4a op4 nn4 2k
+Rf4b on4 np4 2k
+Rl4  op4 on4 1k
+Vin4 sp4 0 DC 0 AC 1 PULSE(-0.25 0.25 10n 0.1n 0.1n 100n 200n)
+Es4  sn4 0 sp4 0 -1
+Vvo4 vo4 0 DC 0 AC 0
+
+* --- 5. Same amplifier, Vocm driven (output CM response) ------------------------
+X5   np5 nn5 vcc vee op5 on5 vo5 FDOPAMP_FULL
+Rg5a 0 np5 500
+Rg5b 0 nn5 500
+Rf5a op5 nn5 2k
+Rf5b on5 np5 2k
+Rl5  op5 on5 1k
+Vvo5 vo5 0 DC 0 AC 1 PULSE(-0.5 0.5 10n 0.1n 0.1n 100n 200n)
+
+* --- 6. Same amplifier into 20 ohm: output current limit --------------------------
+X6   np6 nn6 vcc vee op6 on6 vo6 FDOPAMP_FULL
+Rg6a sp6 np6 500
+Rg6b sn6 nn6 500
+Rf6a op6 nn6 2k
+Rf6b on6 np6 2k
+Rl6  op6 on6 20
+Vin6 sp6 0 DC 0
+Es6  sn6 0 sp6 0 -1
+
+* --- 7. CM loop gain: core with the CM loop broken at cmo/cmi (1 GH / 1 GF) ------
+X7   np7 nn7 vcc vee op7 on7 vo7 cmo7 cmi7 FDOPAMP_CORE
+Rg7a 0 np7 500
+Rg7b 0 nn7 500
+Rf7a op7 nn7 2k
+Rf7b on7 np7 2k
+Rl7  op7 on7 1k
+Lb7  cmo7 cmi7 1e9
+Cb7  cmi7 st7 1e9
+Vt7  st7 0 DC 0 AC 1
+
+.control
+  set noaskquit
+  op
+  echo "--- DC ---"
+  let vodm4 = v(op4)-v(on4)
+  let vocm4 = 0.5*(v(op4)+v(on4))
+  print vodm4 vocm4 v(vo4)
+  * expected: vodm4 = VOS*(1+Rf/Rg) - IOS*Rf = 5m - 0.2m, vocm4 ~ VOSCM = 1m
+  print v(vo1) -i(vcc)
+
+  ac dec 20 1 10G
+  let ad    = vdb(op1,on1)
+  let phd   = 180/pi*cph(v(op1)-v(on1))
+  let cmrrdb = vdb(op1,on1)-vdb(op2,on2)
+  let psrrp = vdb(op1,on1)-vdb(op3,on3)
+  let acl   = vdb(op4,on4)
+  let cmout = db(0.5*(v(op5)+v(on5)))
+  let tcm   = -v(cmo7)/v(cmi7)
+  let tcmdb = db(tcm)
+  let tcmph = 180/pi*cph(tcm)
+  meas ac a0_db    find ad at=1
+  meas ac fu       when ad=0
+  meas ac ph_fu    find phd when ad=0
+  meas ac cmrr_lf  find cmrrdb at=1k
+  meas ac cmrr_1m  find cmrrdb at=1Meg
+  meas ac psrr_lf  find psrrp at=1k
+  meas ac acl_lf   find acl at=1k
+  let aclrel = acl-acl[0]
+  meas ac f3db_cl  when aclrel=-3
+  meas ac cm_lf    find cmout at=1k
+  meas ac f3db_cm  when cmout=-3
+  meas ac tcm_lf   find tcmdb at=1k
+  meas ac fu_cm    when tcmdb=0
+  meas ac ph_cm    find tcmph when tcmdb=0
+  wrdata res_ac.txt ad phd cmrrdb psrrp acl cmout tcmdb tcmph
+
+  tran 0.02n 400n
+  let vod4 = v(op4)-v(on4)
+  let voc5 = 0.5*(v(op5)+v(on5))
+  meas tran tr_dm trig vod4 val=-1.6 rise=1 targ vod4 val=1.6 rise=1
+  let sr_dm = 3.2/tr_dm/1e6
+  print sr_dm
+  meas tran tr_cm trig voc5 val=-0.4 rise=1 targ voc5 val=0.4 rise=1
+  let sr_cm = 0.8/tr_cm/1e6
+  print sr_cm
+  wrdata res_tran.txt vod4 v(op4) v(on4) voc5
+
+  dc Vin4 -2.5 2.5 0.01
+  let vod4 = v(op4)-v(on4)
+  meas dc vod_max max vod4
+  meas dc vod_min min vod4
+  meas dc vop_max max v(op4)
+  wrdata res_dc.txt vod4 v(op4) v(on4)
+
+  dc Vin6 -1 1 0.01
+  let il6 = (v(op6)-v(on6))/20
+  meas dc il_max max il6
+  meas dc il_min min il6
+
+  noise v(op4,on4) Vin4 dec 20 10 1G
+  setplot previous
+  let nexp = sqrt((5n)^2*(1+1k/frequency)*25 + 2*(1p*2k)^2 + 2*4*1.380649e-23*300.15*2k*(1+2k/500))
+  let ratio = onoise_spectrum/nexp
+  * points 40, 80, 100 of the dec-20 sweep from 10 Hz are 1 kHz, 100 kHz, 1 MHz
+  print frequency[40] onoise_spectrum[40] nexp[40] ratio[40]
+  print frequency[80] onoise_spectrum[80] nexp[80] ratio[80]
+  print frequency[100] onoise_spectrum[100] nexp[100] ratio[100]
+  wrdata res_noise.txt onoise_spectrum nexp
+.endc
+.end

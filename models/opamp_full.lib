@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.0 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee out
 *
@@ -12,7 +12,8 @@
 *   - differential / common-mode input R and C (noiseless)
 *   - CMRR and PSRR(+/-) with frequency roll-off (a zero in the coupling gain)
 *   - output resistance (ROUT) and output capacitance
-*   - input voltage noise (white + 1/f) and input current noise (white)
+*   - input voltage noise (white + 1/f) and input current noise (white + 1/f,
+*     FCIN = current-noise 1/f corner, independent on each input; 0 = off)
 * NONLINEAR EFFECTS
 *   - input offset voltage, input bias and offset currents
 *   - input stage tanh() characteristic  -> slew rate and large-signal THD
@@ -33,7 +34,8 @@
 *     by the internal V(vd)). So no spurious (VOS+en)/RID current flows in
 *     the source resistance.
 *   - All model-internal resistors are noiseless (VCCS form). The only noise
-*     generators are Rnv, Rnp, Rnn (white) and Dfa (1/f). Noise levels are
+*     generators are Rnv, Rnp, Rnn (white), Dfa (1/f voltage) and Dfp1, Dfn1
+*     (1/f current, FCIN > 0). Noise levels are
 *     exact at TEMP = 27 C and scale like kT elsewhere.
 *   - Bias currents: IB > 0 flows INTO the pins (NPN input); use IB < 0 for PNP.
 *   - RIC || CIC is the common-mode input impedance with both inputs tied
@@ -72,7 +74,7 @@ Hd  out na Vs {K*TAUZ/CD}
 + RID=2Meg CID=1.4p RIC=200Meg CIC=1.5p
 + CMRR=31.6k FCMRR=200 PSRRP=31.6k PSRRN=31.6k FPSRR=100 VCCN=15 VEEN=-15
 + VCMN={0.5*(VCCN+VEEN)}
-+ ENOISE=20n FCEN=200 INOISE=0.5p
++ ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
 + ICCQ=1.7m VHD=2 VLD=2 ICMHI=2 ICMLO=2 VK=0.15
 + ROUT=75 ISRC=25m ISNK=25m VXO=2m COUT=3p
 + VCLMP=100 RCLMP=100
@@ -96,6 +98,13 @@ Hd  out na Vs {K*TAUZ/CD}
 .param ESH2={4*1.602176634e-19*VTN*VTN/IFL}
 .param GENV={sqrt(max(ENOISE*ENOISE-ESH2,0))/VNTH}
 .param GNI={INOISE/VNTH}
+* 1/f current noise (FCIN > 0): one more flicker diode pair per input, so the
+* two pins get independent noise. The flicker voltage of the pair is scaled to
+* VNI*sqrt(FCIN/f) with VNI = 1 uV/rtHz and converted to current by GFI =
+* INOISE/VNI, giving INOISE^2*FCIN/f. The pair's shot noise then adds only
+* (0.21n/1u)^2 = 4e-8 of INOISE^2. FCIN = 0 disables the sources (GFI = 0).
+.param KFI={1e-12*FCIN*IFL/(VTN*VTN)}
+.param GFI={FCIN>0 ? INOISE/1u : 0}
 
 * ---- input network (noiseless) -------------------------------------------------
 * RID carries V(vd)/RID, i.e. it sits behind the series error voltage
@@ -132,6 +141,18 @@ Dfb  nfb 0 DQ
 Efl  nfl 0 nfa nfb 1
 .model DFLK D(IS=1e-14 N=1 KF={KFV} AF=1)
 .model DQ   D(IS=1e-14 N=1)
+* 1/f current noise, independent on each input (FCIN > 0)
+Ifp1 0 nfp1 DC {IFL}
+Dfp1 nfp1 0 DFLKI
+Ifp2 0 nfp2 DC {IFL}
+Dfp2 nfp2 0 DQ
+Gfp  0 inp nfp1 nfp2 {GFI}
+Ifn1 0 nfn1 DC {IFL}
+Dfn1 nfn1 0 DFLKI
+Ifn2 0 nfn2 DC {IFL}
+Dfn2 nfn2 0 DQ
+Gfn  0 inn nfn1 nfn2 {GFI}
+.model DFLKI D(IS=1e-14 N=1 KF={KFI} AF=1)
 
 * ---- CMRR and PSRR coupling into the input -----------------------------------
 Bcm  ncm0 0 V = 0.5*(V(inp)+V(inn))-{VCMN}

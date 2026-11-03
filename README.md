@@ -34,7 +34,7 @@ overload and saturation behaviour.
 
 **Noise**
 - input voltage noise: white density `ENOISE` plus a 1/f component with corner `FCEN`
-- input current noise `INOISE` on each input
+- input current noise on each input: white density `INOISE` plus an optional 1/f component with corner `FCIN`; the two inputs have independent noise
 - every model-internal resistor is a noiseless controlled source, so the simulated noise is exactly the specified noise (checked to better than 0.1 %)
 
 **Nonlinear**
@@ -103,7 +103,8 @@ way, from `tests/`.
 | `VCCN`, `VEEN` | nominal supply voltages (PSRR reference) | 15, −15 | 5, −5 |
 | `VCMN` | input CM voltage at which `VOS` is specified | mid-supply | mid-supply |
 | `ENOISE`, `FCEN` | white input voltage noise (V/√Hz) and its 1/f corner (Hz) | 20n, 200 | 5n, 1k |
-| `INOISE` | input current noise per input (A/√Hz) | 0.5p | 1p |
+| `INOISE` | white input current noise per input (A/√Hz) | 0.5p | 1p |
+| `FCIN` | 1/f corner of the input current noise (Hz); 0 = white only | 0 | 0 |
 | `ICCQ` | quiescent supply current (A) | 1.7m | 10m |
 | `VHD`, `VLD` | output headroom to the positive / negative rail (V) | 2, 2 | 1.2, 1.2 |
 | `ICMHI`, `ICMLO`, `VK` | input CM range headroom to the rails (V) and softness of its edge (V) | 2, 2, 0.15 | 1.5, 1, 0.1 |
@@ -152,6 +153,7 @@ ngspice-42 and the default parameters:
 | current limit | ±25.0 mA | current limit | ±49.7 mA |
 | supply current | 1.71 mA | DM / CM loop gain, gain-4 stage | 19.3 MHz, 77° / 48.5 MHz, 76° |
 | noise vs theory | within 0.02 % | output noise vs theory | within 0.1 % |
+| 1/f current noise (`FCIN` = 2k) | within 0.03 % | 1/f current noise (`FCIN` = 10k) | within 0.01 % |
 
 `tests/fd_middlebrook.cir` also checks the Middlebrook loop gains of the FDA against a
 conventional L/C loop break (CM: identical; DM: within 0.5 %, the residual being the loading

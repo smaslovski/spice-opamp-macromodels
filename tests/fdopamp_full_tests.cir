@@ -72,6 +72,15 @@ Lb7  cmo7 cmi7 1e9
 Cb7  cmi7 st7 1e9
 Vt7  st7 0 DC 0 AC 1
 
+* --- 8. 1/f current noise (FCIN = 10k), high-impedance gain-4 stage (Rg=50k, Rf=200k)
+X8   np8 nn8 vcc vee op8 on8 vo8 FDOPAMP_FULL PARAMS: FCIN=10k
+Rg8a sp8 np8 50k
+Rg8b 0 nn8 50k
+Rf8a op8 nn8 200k
+Rf8b on8 np8 200k
+Vin8 sp8 0 DC 0 AC 1
+Vvo8 vo8 0 DC 0
+
 .control
   set noaskquit
   op
@@ -140,5 +149,18 @@ Vt7  st7 0 DC 0 AC 1
   print frequency[80] onoise_spectrum[80] nexp[80] ratio[80]
   print frequency[100] onoise_spectrum[100] nexp[100] ratio[100]
   wrdata res_noise.txt onoise_spectrum nexp
+
+  noise v(op8,on8) Vin8 dec 20 1 10k
+  setplot previous
+  * expected: en^2*(1+FCEN/f)*(1+Rf/Rg)^2 + 2*(in*Rf)^2*(1+FCIN/f) + 2*4kT*Rf*(1+Rf/Rg)
+  let nexp8 = sqrt((5n)^2*(1+1k/frequency)*25 + 2*(1p*200k)^2*(1+10k/frequency) + 2*4*1.380649e-23*300.15*200k*5)
+  let ratio8 = onoise_spectrum/nexp8
+  let r8min = vecmin(ratio8)
+  let r8max = vecmax(ratio8)
+  * points 0, 40, 80 of the dec-20 sweep are 1 Hz, 100 Hz, 10 kHz
+  print frequency[0] onoise_spectrum[0] nexp8[0] ratio8[0]
+  print frequency[40] onoise_spectrum[40] nexp8[40] ratio8[40]
+  print frequency[80] onoise_spectrum[80] nexp8[80] ratio8[80]
+  print r8min r8max
 .endc
 .end

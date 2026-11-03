@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.0 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee outp outn vocm
 *   outp is the non-inverted output (in phase with inp), outn the inverted one.
@@ -14,7 +14,8 @@
 *   - DC gain A0, dominant pole, GBW, two extra poles (FP2, FP3)
 *   - input stage tanh() -> differential output slew rate SR
 *   - input CM range window, differential clamp (optional), input R/C
-*   - VOS, IB/IOS, CMRR(f), PSRR(f), white + 1/f voltage noise, current noise
+*   - VOS, IB/IOS, CMRR(f), PSRR(f), white + 1/f voltage noise, white + 1/f
+*     current noise (FCIN = 1/f corner, independent on each input; 0 = off)
 * COMMON-MODE (CM) LOOP  (internal CMFB)
 *   - senses the output CM (V(outp)+V(outn))/2 and compares it with V(vocm)
 *   - CM error amplifier: DC gain A0CM, unity-gain frequency GBWCM, second
@@ -58,7 +59,7 @@ Hd  out na Vs {K*TAUZ/CD}
 + RID=1Meg CID=1p RIC=100Meg CIC=2p
 + CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
 + VCMN={0.5*(VCCN+VEEN)}
-+ ENOISE=5n FCEN=1k INOISE=1p
++ ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
 + ROUT=10 ISRC=50m ISNK=50m VXO=0 COUT=1p
 + VCLMP=100 RCLMP=100
@@ -81,6 +82,13 @@ Hd  out na Vs {K*TAUZ/CD}
 .param ESH2={4*1.602176634e-19*VTN*VTN/IFL}
 .param GENV={sqrt(max(ENOISE*ENOISE-ESH2,0))/VNTH}
 .param GNI={INOISE/VNTH}
+* 1/f current noise (FCIN > 0): one more flicker diode pair per input, so the
+* two pins get independent noise. The flicker voltage of the pair is scaled to
+* VNI*sqrt(FCIN/f) with VNI = 1 uV/rtHz and converted to current by GFI =
+* INOISE/VNI, giving INOISE^2*FCIN/f. The pair's shot noise then adds only
+* (0.21n/1u)^2 = 4e-8 of INOISE^2. FCIN = 0 disables the sources (GFI = 0).
+.param KFI={1e-12*FCIN*IFL/(VTN*VTN)}
+.param GFI={FCIN>0 ? INOISE/1u : 0}
 
 * ---- input network (noiseless; RID behind the series error voltage) ----------
 Gid  inp inn vd 0 {1/RID}
@@ -108,6 +116,18 @@ Dfb  nfb 0 DQ
 Efl  nfl 0 nfa nfb 1
 .model DFLK D(IS=1e-14 N=1 KF={KFV} AF=1)
 .model DQ   D(IS=1e-14 N=1)
+* 1/f current noise, independent on each input (FCIN > 0)
+Ifp1 0 nfp1 DC {IFL}
+Dfp1 nfp1 0 DFLKI
+Ifp2 0 nfp2 DC {IFL}
+Dfp2 nfp2 0 DQ
+Gfp  0 inp nfp1 nfp2 {GFI}
+Ifn1 0 nfn1 DC {IFL}
+Dfn1 nfn1 0 DFLKI
+Ifn2 0 nfn2 DC {IFL}
+Dfn2 nfn2 0 DQ
+Gfn  0 inn nfn1 nfn2 {GFI}
+.model DFLKI D(IS=1e-14 N=1 KF={KFI} AF=1)
 
 * ---- CMRR and PSRR coupling into the DM input ----------------------------------
 Bcm  ncm0 0 V = 0.5*(V(inp)+V(inn))-{VCMN}
@@ -180,7 +200,7 @@ Glkn outn 0 outn 0 1e-8
 + RID=1Meg CID=1p RIC=100Meg CIC=2p
 + CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
 + VCMN={0.5*(VCCN+VEEN)}
-+ ENOISE=5n FCEN=1k INOISE=1p
++ ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
 + ROUT=10 ISRC=50m ISNK=50m VXO=0 COUT=1p
 + VCLMP=100 RCLMP=100
@@ -192,7 +212,7 @@ Xc inp inn vcc vee outp outn vocm ncm ncm FDOPAMP_CORE PARAMS:
 + RID={RID} CID={CID} RIC={RIC} CIC={CIC}
 + CMRR={CMRR} FCMRR={FCMRR} PSRRP={PSRRP} PSRRN={PSRRN} FPSRR={FPSRR} VCCN={VCCN} VEEN={VEEN}
 + VCMN={VCMN}
-+ ENOISE={ENOISE} FCEN={FCEN} INOISE={INOISE}
++ ENOISE={ENOISE} FCEN={FCEN} INOISE={INOISE} FCIN={FCIN}
 + ICCQ={ICCQ} VHD={VHD} VLD={VLD} ICMHI={ICMHI} ICMLO={ICMLO} VK={VK}
 + ROUT={ROUT} ISRC={ISRC} ISNK={ISNK} VXO={VXO} COUT={COUT}
 + VCLMP={VCLMP} RCLMP={RCLMP}

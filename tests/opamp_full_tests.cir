@@ -59,6 +59,13 @@ Vin8 p8 0 0
 X9   p9 o9 vcc vee o9 OPAMP_FULL
 Vin9 p9 0 0
 
+* --- 10. 1/f current noise (FCIN = 2k): 100k at + and 100k in the feedback ------
+*         independent pin noise adds: 2*(in*R)^2*(1+FCIN/f); correlated would cancel
+X10  p10 n10 vcc vee o10 OPAMP_FULL PARAMS: FCIN=2k
+Rs10 s10 p10 100k
+Rf10 o10 n10 100k
+Vin10 s10 0 0 AC 1
+
 .control
   op
   echo "--- DC operating point ---"
@@ -138,5 +145,18 @@ Vin9 p9 0 0
   print frequency[60] onoise_spectrum[60] en_exp[60] ratio[60]
   print frequency[80] onoise_spectrum[80] en_exp[80] ratio[80]
   plot onoise_spectrum en_exp loglog title 'Output noise density (V/rtHz), model vs expected'
+
+  noise v(o10) Vin10 dec 20 0.1 10k
+  setplot previous
+  * expected: en^2*(1+FCEN/f) + 2*(in*R)^2*(1+FCIN/f) + 2*4kT*R
+  let en_exp10 = sqrt((20n)^2*(1+200/frequency) + 2*(0.5p*100k)^2*(1+2k/frequency) + 2*4*1.380649e-23*300.15*100k)
+  let ratio10 = onoise_spectrum/en_exp10
+  let r10min = vecmin(ratio10)
+  let r10max = vecmax(ratio10)
+  * points 0, 40, 100 of the dec-20 sweep are 0.1 Hz, 10 Hz, 10 kHz
+  print frequency[0] onoise_spectrum[0] en_exp10[0] ratio10[0]
+  print frequency[40] onoise_spectrum[40] en_exp10[40] ratio10[40]
+  print frequency[100] onoise_spectrum[100] en_exp10[100] ratio10[100]
+  print r10min r10max
 .endc
 .end

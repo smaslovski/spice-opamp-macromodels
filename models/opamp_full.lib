@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.2 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee out
 *
@@ -39,8 +39,9 @@
 *     (1/f current, FCIN > 0). Noise levels are
 *     exact at TEMP = 27 C and scale like kT elsewhere.
 *   - Bias currents: IB > 0 flows INTO the pins (NPN input); use IB < 0 for PNP.
-*   - RIC || CIC is the common-mode input impedance with both inputs tied
-*     together (datasheet convention): each pin gets 2*RIC || CIC/2.
+*   - RIC || CIC is the common-mode input impedance of EACH input pin to
+*     ground (per-pin datasheet values, e.g. "34 Mohm, 4 pF each input").
+*     With both inputs tied together the impedance is RIC/2 || 2*CIC.
 *   - VCMN: the input common-mode voltage at which VOS is specified. The CMRR
 *     error term is (Vcm - VCMN)/CMRR. The default is mid-supply.
 *   - Differential clamp: two anti-parallel diodes between inp and inn, each
@@ -67,10 +68,10 @@
 *   IOS     A      20n      input offset current, I(inp) - I(inn)
 *   RID     ohm    2Meg     differential input resistance (noiseless)
 *   CID     F      1.4p     differential input capacitance
-*   RIC     ohm    200Meg   common-mode input resistance, inputs tied (noiseless;
-*                           each pin gets 2*RIC to ground)
-*   CIC     F      1.5p     common-mode input capacitance, inputs tied (each pin
-*                           gets CIC/2 to ground)
+*   RIC     ohm    400Meg   common-mode input resistance of each input pin to
+*                           ground (noiseless)
+*   CIC     F      0.75p    common-mode input capacitance of each input pin to
+*                           ground
 *  Differential input clamp (two anti-parallel diodes between inp and inn;
 *  there are no clamp diodes from the inputs to the supply rails)
 *   VCLMP   V      100      forward voltage of each diode at 1 mA (set through
@@ -131,7 +132,7 @@ Hd  out na Vs {K*TAUZ/CD}
 + PARAMS:
 + A0=200k GBW=1Meg SR=0.5Meg FP2=3Meg FP3=10Meg
 + VOS=1m IB=80n IOS=20n
-+ RID=2Meg CID=1.4p RIC=200Meg CIC=1.5p
++ RID=2Meg CID=1.4p RIC=400Meg CIC=0.75p
 + CMRR=31.6k FCMRR=200 PSRRP=31.6k PSRRN=31.6k FPSRR=100 VCCN=15 VEEN=-15
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
@@ -171,10 +172,10 @@ Hd  out na Vs {K*TAUZ/CD}
 * (VOS, noise, CMRR/PSRR), as if that voltage were in series with the + pin
 Gid  inp inn vd 0 {1/RID}
 Cid  inp inn {CID}
-Gic1 inp 0 inp 0 {1/(2*RIC)}
-Gic2 inn 0 inn 0 {1/(2*RIC)}
-Cic1 inp 0 {CIC/2}
-Cic2 inn 0 {CIC/2}
+Gic1 inp 0 inp 0 {1/RIC}
+Gic2 inn 0 inn 0 {1/RIC}
+Cic1 inp 0 {CIC}
+Cic2 inn 0 {CIC}
 * bias currents flow INTO the pins for IB > 0 (NPN input)
 Ibp  inp 0 DC {IB+IOS/2}
 Ibn  inn 0 DC {IB-IOS/2}
@@ -262,10 +263,10 @@ Cout out 0 {COUT}
 *
 * Generic CMOS rail-to-rail, 5 V single supply, 5 MHz, 5 V/us:
 *   A0=100k GBW=5Meg SR=5Meg FP2=15Meg FP3=50Meg VOS=2m IB=1p IOS=0.5p
-*   RID=1T CID=2p RIC=1T CIC=3p CMRR=10k FCMRR=1k PSRRP=10k PSRRN=10k
+*   RID=1T CID=2p RIC=2T CIC=1.5p CMRR=10k FCMRR=1k PSRRP=10k PSRRN=10k
 *   FPSRR=1k VCCN=5 VEEN=0 ENOISE=15n FCEN=1k INOISE=0.1f ICCQ=1m
 *   VHD=0.05 VLD=0.05 ICMHI=-0.1 ICMLO=-0.1 VK=0.05 ROUT=100 ISRC=40m
 *   ISNK=40m VXO=0 COUT=2p
-*   (RIC=1T / RID=1T are fine; the Gmin of the simulator dominates.)
+*   (RIC=2T / RID=1T are fine; the Gmin of the simulator dominates.)
 *   VCMN defaults to 2.5 V here (mid-supply).
 *==============================================================================

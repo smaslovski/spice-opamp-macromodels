@@ -49,7 +49,7 @@ overload and saturation behaviour.
 
 ### Design choices worth knowing
 - `VOS`, the input voltage noise and the CMRR/PSRR error terms form **one error voltage in series with the + input**, ahead of `RID`. No spurious `(VOS + en)/RID` current flows in the source resistance.
-- `RIC || CIC` is the common-mode input impedance with both inputs tied together (datasheet convention); each pin gets `2*RIC || CIC/2`.
+- `RIC || CIC` is the common-mode input impedance of each input pin to ground, i.e. per-pin datasheet values ("input impedance, each input: 34 MΩ ∥ 4 pF" → `RIC=34Meg CIC=4p`). If a datasheet quotes the value with both inputs tied together (the JEDEC definition of z_ic), use `RIC = 2·R` and `CIC = C/2`.
 - The CMRR error is `(Vcm - VCMN)/CMRR`, where `VCMN` (default: mid-supply) is the common-mode voltage at which `VOS` is specified. PSRR is referred to the nominal supplies `VCCN`, `VEEN`.
 - In the class-AB crossover (|Iout| below about `VXO/ROUT`) the small-signal output resistance is `2*ROUT`; it is `ROUT` once the output carries more than about `2*VXO/ROUT`. Set `VXO=0` for a constant `ROUT`.
 - Noise levels are exact at 27 °C and scale with kT at other temperatures.
@@ -108,7 +108,7 @@ suffixes (`k`, `Meg`, `G`, `m`, `u`, `n`, `p`, `f`).
 | `IB` | A | input bias current (average of the two pins); `IB > 0` flows into the pins (NPN input), `IB < 0` out of them (PNP input) | 80n | 2u |
 | `IOS` | A | input offset current, I(inp) − I(inn) | 20n | 0.1u |
 | `RID`, `CID` | Ω, F | differential input resistance and capacitance (between `inp` and `inn`) | 2Meg, 1.4p | 1Meg, 1p |
-| `RIC`, `CIC` | Ω, F | common-mode input resistance and capacitance, measured with both inputs tied (each pin gets `2*RIC` ∥ `CIC/2` to ground) | 200Meg, 1.5p | 100Meg, 2p |
+| `RIC`, `CIC` | Ω, F | common-mode input resistance and capacitance of each input pin to ground | 400Meg, 0.75p | 200Meg, 1p |
 
 **Differential input clamp**
 

@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.2 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee outp outn vocm
 *   outp is the non-inverted output (in phase with inp), outn the inverted one.
@@ -55,10 +55,10 @@
 *   IOS     A      0.1u     input offset current, I(inp) - I(inn)
 *   RID     ohm    1Meg     differential input resistance (noiseless)
 *   CID     F      1p       differential input capacitance
-*   RIC     ohm    100Meg   common-mode input resistance, inputs tied (noiseless;
-*                           each pin gets 2*RIC to ground)
-*   CIC     F      2p       common-mode input capacitance, inputs tied (each pin
-*                           gets CIC/2 to ground)
+*   RIC     ohm    200Meg   common-mode input resistance of each input pin to
+*                           ground (noiseless)
+*   CIC     F      1p       common-mode input capacitance of each input pin to
+*                           ground
 *  Differential input clamp (two anti-parallel diodes between inp and inn;
 *  there are no clamp diodes from the inputs to the supply rails)
 *   VCLMP   V      100      forward voltage of each diode at 1 mA (set through
@@ -125,7 +125,7 @@ Hd  out na Vs {K*TAUZ/CD}
 + PARAMS:
 + A0=100k GBW=100Meg SR=200Meg FP2=300Meg FP3=1G
 + VOS=1m IB=2u IOS=0.1u
-+ RID=1Meg CID=1p RIC=100Meg CIC=2p
++ RID=1Meg CID=1p RIC=200Meg CIC=1p
 + CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
@@ -162,10 +162,10 @@ Hd  out na Vs {K*TAUZ/CD}
 * ---- input network (noiseless; RID behind the series error voltage) ----------
 Gid  inp inn vd 0 {1/RID}
 Cid  inp inn {CID}
-Gic1 inp 0 inp 0 {1/(2*RIC)}
-Gic2 inn 0 inn 0 {1/(2*RIC)}
-Cic1 inp 0 {CIC/2}
-Cic2 inn 0 {CIC/2}
+Gic1 inp 0 inp 0 {1/RIC}
+Gic2 inn 0 inn 0 {1/RIC}
+Cic1 inp 0 {CIC}
+Cic2 inn 0 {CIC}
 Ibp  inp 0 DC {IB+IOS/2}
 Ibn  inn 0 DC {IB-IOS/2}
 Dp1  inp inn DIN
@@ -266,7 +266,7 @@ Glkn outn 0 outn 0 1e-8
 + PARAMS:
 + A0=100k GBW=100Meg SR=200Meg FP2=300Meg FP3=1G
 + VOS=1m IB=2u IOS=0.1u
-+ RID=1Meg CID=1p RIC=100Meg CIC=2p
++ RID=1Meg CID=1p RIC=200Meg CIC=1p
 + CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0

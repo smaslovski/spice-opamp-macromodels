@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
-"""Cross-simulator check: run the same measurement circuits in ngspice and LTspice
-and compare the results (DC, AC, noise, transient, for OPAMP_FULL and FDOPAMP_FULL).
+"""Cross-simulator check: run the same measurement circuits in ngspice, LTspice and
+PSpice and compare the results with ngspice (DC, AC, noise, transient, for OPAMP_FULL
+and FDOPAMP_FULL). PSpice uses the port in models/pspice/.
 
     cd tests && python3 cross_sim.py               # ngspice only (prints results)
-    cd tests && python3 cross_sim.py --ltspice PATH/LTspice.exe
+    cd tests && python3 cross_sim.py --ltspice PATH/LTspice.exe --pspice PATH/pspice.exe
 
-LTspice is run in batch mode (-b), natively on Windows or through wine elsewhere.
-Without --ltspice the script looks in the usual install locations and in $LTSPICE.
-The decks and logs are written to tests/xsim_out/.
+LTspice runs in batch mode (-b), PSpice with -r -e; both natively on Windows or
+through wine elsewhere. Without the options the script looks in the usual install
+locations and in $LTSPICE / $PSPICE. Decks and logs are written to tests/xsim_out/.
+$LTSPICE_WINEPREFIX / $PSPICE_WINEPREFIX choose a wine prefix per simulator.
+PSpice 9.1 (the 1999 student/evaluation version) is enough.
 """
 import argparse, glob, os, re, shutil, subprocess, sys
 
@@ -30,6 +33,14 @@ CASES = {
                   ".dc Vin 13 14 0.25", [('vwin', 'dc', 'V(out)@13.5', 1e-5)]),
     'dc_ilim': ('opamp_full.lib', SUP15 + "Vin in 0 5\nX1 in out vcc vee out OPAMP_FULL\nRL out 0 10\n",
                 ".dc Vin 4 6 0.5", [('vlim', 'dc', 'V(out)@5', 1e-5), ('icc', 'dc', 'I(Vcc)@5', 1e-5)]),
+    'dc_vcmn': ('opamp_full.lib', SUP15 + "Vin in 0 5\nX1 in out vcc vee out OPAMP_FULL PARAMS: VCMN=5 CMRR=1k\n",
+                ".dc Vin 4 6 0.5", [('vo', 'dc', 'V(out)@5', 1e-5)]),
+    'dc_clamp': ('opamp_full.lib', SUP15 + "Vin in 0 2\nRs in p 1k\nX1 p 0 vcc vee out OPAMP_FULL PARAMS: VCLMP=0.7 RCLMP=100\nRL out 0 10k\n",
+                 # diode at 1 mA: the DC sweep converges only to ~1e-4 (ngspice .op vs .dc differ by 9e-5)
+                 ".dc Vin 1 3 0.5", [('vp', 'dc', 'V(p)@2', 3e-4), ('vo', 'dc', 'V(out)@2', 1e-5)]),
+    'dc_rr': ('opamp_full.lib', "Vcc vcc 0 5\nVee vee 0 0\nVin in 0 4.9\nX1 in out vcc vee out OPAMP_FULL PARAMS: "
+              "GBW=10Meg SR=10Meg VCCN=5 VEEN=0 VHD=0.05 VLD=0.05 ICMHI=-0.1 ICMLO=-0.1 VK=0.05 ROUT=100 VXO=0\n"
+              "RL out 0 1k\n", ".dc Vin 4.8 5 0.05", [('vo', 'dc', 'V(out)@4.9', 1e-5)]),
     'ac_inv': ('opamp_full.lib', SUP15 + "Vin in 0 DC 0 AC 1\nR1 in m 1k\nR2 m out 10k\n"
                "X1 0 m vcc vee out OPAMP_FULL\n", ".ac dec 50 10 100Meg",
                [('g10k', 'ac', 'V(out)@10k', 1e-3), ('g100k', 'ac', 'V(out)@100k', 1e-3),
@@ -122,13 +133,128 @@ def run_lt(name, exe):
     cir = os.path.join(OUT, f'lt_{name}.cir')
     open(cir, 'w').write(deck(name, 'lt'))
     cmd = ([exe] if os.name == 'nt' else ['wine', exe]) + ['-b', os.path.basename(cir)]
-    subprocess.run(cmd, cwd=OUT, capture_output=True, timeout=300)
+    subprocess.run(cmd, cwd=OUT, capture_output=True, timeout=300, env=wine_env('LTSPICE'))
     raw = open(cir[:-4] + '.log', 'rb').read()
     txt = raw.decode('utf-16-le') if raw[1:2] == b'\x00' else raw.decode('latin-1')
     res = {m: float(v) for m, v in re.findall(r'^(\w+): .*?=\(?([-0-9.eE+]+)', txt, re.M)}
     res.update({m: float(v) for m, v in re.findall(r'^(\w+): .*? AT ([-0-9.eE+]+)', txt, re.M)})  # 'when'
     res['_floating'] = len(re.findall('is floating', txt))
     return res
+
+
+def wine_env(sim):
+    """$LTSPICE_WINEPREFIX / $PSPICE_WINEPREFIX select a wine prefix per simulator"""
+    env = dict(os.environ)
+    if os.environ.get(sim + '_WINEPREFIX'):
+        env['WINEPREFIX'] = os.environ[sim + '_WINEPREFIX']
+    env.setdefault('WINEDEBUG', '-all')
+    return env
+
+
+def ps_name(v):
+    """V(out) -> V([out]); node names in brackets (needed by PSpice 9 under wine)"""
+    return re.sub(r'V\((\w+)\)', r'V([\1])', v)
+
+
+def ps_deck(name):
+    lib, ckt, an, meas = CASES[name]
+    rel = os.path.relpath(os.path.join(MODELS, 'pspice', lib), OUT).replace('/', '\\')
+    L = [f'* {name}', f'.INC {rel}']
+    for ln in ckt.strip().split('\n'):          # PSpice 9: 132 characters per line
+        while len(ln) > 100:
+            cut = ln.rfind(' ', 0, 100)
+            L.append(ln[:cut])
+            ln = '+' + ln[cut:]
+        L.append(ln)
+    L.append('.OPTIONS NUMDGT=8')
+    w = an.split()
+    if w[0] == '.noise':
+        out = w[1]
+        m = re.match(r'V\((\w+)(?:,(\w+))?\)', out)
+        node = f'V([{m.group(1)}],[{m.group(2)}])' if m.group(2) else f'V([{m.group(1)}])'
+        L += [f'.AC {" ".join(w[3:])}', f'.NOISE {node} {w[2]}', '.PRINT NOISE ONOISE']
+        cols = ['ONOISE']
+    else:
+        kind = w[0][1:]
+        cols = []
+        for _, k, e, _ in meas:
+            v = split(e)[0] if '@' in e else (e.split('=')[0] if '=' in e else e.split()[1])
+            v = ps_name(v)
+            if k == 'ac':
+                v = 'VDB' + v[1:]
+            if v not in cols:
+                cols.append(v)
+        if kind == 'tran':
+            L.append(f'.TRAN {w[1]} {w[2]} 0 {w[1]}')
+        else:
+            L.append(an.upper().replace('MEG', 'Meg'))
+        L.append(f'.PRINT {kind.upper()} ' + ' '.join(cols))
+    L.append('.END')
+    return '\r\n'.join(L) + '\r\n', cols
+
+
+def run_ps(name, exe):
+    import numpy as np
+    txt, cols = ps_deck(name)
+    cir = os.path.join(OUT, f'ps_{name}.cir')
+    open(cir, 'w', newline='').write(txt)
+    outf = cir[:-4] + '.out'
+    if os.path.exists(outf):
+        os.remove(outf)
+    cmd = ([exe] if os.name == 'nt' else ['wine', exe]) + ['-r', '-e', os.path.basename(cir)]
+    subprocess.run(cmd, cwd=OUT, capture_output=True, timeout=600, env=wine_env('PSPICE'))
+    res = {}
+    if not os.path.exists(outf):
+        return res
+    lines = open(outf, errors='ignore').read().replace('\r', '').split('\n')
+    if any(l.startswith('ERROR') for l in lines):
+        res['_errors'] = [l for l in lines if l.startswith('ERROR')]
+        return res
+    rows = []
+    for l in lines:
+        t = l.split()
+        if len(t) == len(cols) + 1:
+            try:
+                rows.append([float(x) for x in t])
+            except ValueError:
+                pass
+    if not rows:
+        return res
+    d = np.array(rows)
+    x = d[:, 0]
+    for m, k, e, _ in CASES[name][3]:
+        if k == 'noise':
+            f = float(e[1:].replace('k', 'e3'))
+            res[m] = float(np.exp(np.interp(np.log(f), np.log(x), np.log(d[:, 1]))))
+        elif k == 'tran' and e.startswith(('max', 'min')):
+            y = d[:, 1 + cols.index(ps_name(e.split()[1]))]
+            sel = (x >= 10e-6) & (x <= 20e-6)
+            res[m] = float(y[sel].max() if e.startswith('max') else y[sel].min())
+        elif k == 'tran' and '@' not in e:
+            v, lvl = e.split('=')
+            y = d[:, 1 + cols.index(ps_name(v))]
+            i = np.where((y[:-1] < float(lvl)) & (y[1:] >= float(lvl)))[0][0]
+            res[m] = float(x[i] + (float(lvl) - y[i]) * (x[i + 1] - x[i]) / (y[i + 1] - y[i]))
+        else:
+            v, at = split(e)
+            at = float(at.lower().replace('meg', 'e6').replace('k', 'e3').replace('u', 'e-6'))
+            c = ps_name(v)
+            if k == 'ac':
+                c = 'VDB' + c[1:]
+            y = d[:, 1 + cols.index(c)]
+            res[m] = float(np.interp(np.log(at), np.log(x), y) if k == 'ac' else np.interp(at, x, y))
+    return res
+
+
+def find_pspice(arg):
+    cands = [arg, os.environ.get('PSPICE'), r'C:\\Program Files\\OrCAD_Demo\\PSpice\\pspice.exe',
+             r'C:\\Program Files (x86)\\OrCAD_Demo\\PSpice\\pspice.exe',
+             os.path.expanduser('~/.wine/drive_c/Program Files/OrCAD_Demo/PSpice/pspice.exe'),
+             os.path.expanduser('~/.wine/drive_c/Program Files (x86)/OrCAD_Demo/PSpice/pspice.exe')]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    return None
 
 
 def find_ltspice(arg):
@@ -145,33 +271,45 @@ def find_ltspice(arg):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--ltspice', help='path to LTspice.exe')
+    ap.add_argument('--pspice', help='path to pspice.exe (PSpice A/D)')
+    ap.add_argument('cases', nargs='*', help='run only these cases')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
+    wine_ok = os.name == 'nt' or shutil.which('wine')
+    sims = []
     lt = find_ltspice(a.ltspice)
-    if lt and os.name != 'nt' and not shutil.which('wine'):
-        lt = None
-    print(f'LTspice: {lt or "not found (ngspice results only)"}\n')
-    print(f'{"case":14s} {"measure":8s} {"ngspice":>14s} {"LTspice":>14s}  diff')
+    if lt and wine_ok:
+        sims.append(('LTspice', lambda n: run_lt(n, lt)))
+    ps = find_pspice(a.pspice)
+    if ps and wine_ok:
+        sims.append(('PSpice', lambda n: run_ps(n, ps)))
+    print(f'LTspice: {lt or "not found"}\nPSpice:  {ps or "not found"}\n')
+    print(f'{"case":14s} {"measure":8s} {"ngspice":>14s}' + ''.join(f' {s:>14s}  diff    ' for s, _ in sims))
     bad = 0
-    for name in CASES:
+    for name in (a.cases or CASES):
         r1 = run_ng(name)
-        r2 = run_lt(name, lt) if lt else {}
-        if r2.get('_floating'):
-            print(f'{name:14s} LTspice reports {r2["_floating"]} floating nodes'); bad += 1
+        rs = [(s, f(name)) for s, f in sims]
+        for s, r in rs:
+            if r.get('_floating'):
+                print(f'{name:14s} {s} reports {r["_floating"]} floating nodes'); bad += 1
+            for e in r.get('_errors', []):
+                print(f'{name:14s} {s}: {e}'); bad += 1
         for m, kind, _, tol in CASES[name][3]:
-            x, y = r1.get(m), r2.get(m)
+            x = r1.get(m)
             if x is None:
                 print(f'{name:14s} {m:8s}  ngspice measurement failed'); bad += 1; continue
-            if y is None:
-                print(f'{name:14s} {m:8s} {x:14.6g} {"-":>14s}' + ('  LTspice measurement failed' if lt else ''))
-                bad += bool(lt); continue
-            d = abs(x - y) if kind == 'ac' else abs(x - y) / max(abs(x), 1e-30)
-            ok = d <= tol
-            bad += not ok
-            print(f'{name:14s} {m:8s} {x:14.6g} {y:14.6g}  {d:.1e}{" dB" if kind == "ac" else ""}'
-                  f'{"" if ok else "  <-- exceeds " + str(tol)}')
-    print('\n' + ('all comparisons within tolerance' if lt and not bad else
-                  f'{bad} problem(s)' if bad else 'ngspice run complete'))
+            line = f'{name:14s} {m:8s} {x:14.6g}'
+            for s, r in rs:
+                y = r.get(m)
+                if y is None:
+                    line += f' {"failed":>14s}          '; bad += 1; continue
+                d = abs(x - y) if kind == 'ac' else abs(x - y) / max(abs(x), 1e-30)
+                ok = d <= tol
+                bad += not ok
+                line += f' {y:14.6g}  {d:.1e}{"dB" if kind == "ac" else "  "}{" " if ok else "!"} '
+            print(line)
+    print('\n' + (f'{bad} problem(s) (! = outside tolerance)' if bad else
+                  'all comparisons within tolerance' if sims else 'ngspice run complete'))
     return 1 if bad else 0
 
 

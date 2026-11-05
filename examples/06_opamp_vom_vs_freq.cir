@@ -1,0 +1,92 @@
+* Example 6 - OPAMP_FULL: maximum peak output voltage vs frequency (uA741-style)
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unique model features shown:
+*  a) the familiar datasheet curve "maximum peak output voltage vs frequency"
+*     follows from two parameters: the swing limit (VHD/VLD) sets the flat part,
+*     the tanh() input stage (SR) sets the roll-off. An overdriven output slews
+*     into a triangle of peak SR/(4f), which crosses the swing limit near 9 kHz.
+*  b) slew-induced distortion: the largest output (peak) with THD <= 1 % rolls
+*     off an octave earlier, because the tanh() stage bends before it slews fully.
+* Runs about 3 min (81 frequencies, 12 bisection steps each).
+* Inverting gain -1 (100k/100k), +/-15 V, RL = 10k, 20 points per decade from
+* 100 Hz to 1 MHz. VHD = VLD = 1 V gives the uA741's +/-14 V swing into 10k
+* (the library default of 2 V gives +/-13 V).
+.include ../models/opamp_full.lib
+Vcc vcc 0 15
+Vee vee 0 -15
+Vin in 0 SIN(0 20 1k)
+R1  in m 100k
+R2  m out 100k
+X1  0 m vcc vee out OPAMP_FULL PARAMS: VHD=1 VLD=1
+RL  out 0 10k
+
+.control
+* results live in their own plot; every simulation plot is destroyed after use
+setplot new
+set rp = $curplot
+let nf = 81
+let fv = vector(nf)
+let vod = vector(nf)
+let vlin = vector(nf)
+let k = 0
+echo "f (Hz)   overdriven peak (V)   peak with THD<=1% (V)"
+while k < nf
+  let fr = 100*10^(k/20)
+  let ts = 1/(fr*400)
+  let t0 = 8/fr
+  let t1 = 12/fr
+  let fv[k] = fr
+  * --- a) overdriven: 20 V peak input, record the output peak over 4 cycles ---
+  alter @Vin[sin] = [ 0 20 $&fr ]
+  tran $&ts $&t1 $&t0 $&ts
+  set tp = $curplot
+  let pk = (vecmax(v(out))-vecmin(v(out)))/2
+  setplot $rp
+  let vod[k] = {$tp}.pk
+  destroy $tp
+  * --- b) largest input with THD <= 1 % (bisection), harmonics by Fourier sums ---
+  let lo = 0
+  let hi = 20
+  let it = 0
+  while it < 12
+    let amp = (lo+hi)/2
+    alter @Vin[sin] = [ 0 $&amp $&fr ]
+    tran $&ts $&t1 $&t0 $&ts
+    set tp = $curplot
+    linearize v(out)
+    set lp = $curplot
+    let n = length(time)
+    let tt = time[0,n-2]
+    let vv = v(out)[0,n-2]
+    let w = 2*pi*{$rp}.fr
+    let a1 = 2*sqrt(mean(vv*cos(w*tt))^2 + mean(vv*sin(w*tt))^2)
+    let hs = 0
+    let h = 2
+    while h <= 7
+      let hs = hs + 4*(mean(vv*cos(h*w*tt))^2 + mean(vv*sin(h*w*tt))^2)
+      let h = h + 1
+    end
+    let thd = sqrt(hs)/a1
+    let vpk = (vecmax(vv)-vecmin(vv))/2
+    setplot $rp
+    let thdv = {$lp}.thd
+    let vpkv = {$lp}.vpk
+    if thdv <= 0.01
+      let lo = amp
+      let vlin[k] = vpkv
+    else
+      let hi = amp
+    end
+    destroy $tp $lp
+    let it = it + 1
+  end
+  let vo = vod[k]
+  let vl = vlin[k]
+  echo "$&fr   $&vo   $&vl"
+  let k = k + 1
+end
+setscale fv
+wrdata ex06_vom.txt vod vlin
+plot vod vlin xlog ylabel 'peak output, V' xlabel 'f, Hz'
+.endc
+.end

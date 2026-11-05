@@ -85,7 +85,7 @@ def _place_legends(fig):
 def run(deck):
     out = subprocess.run(['ngspice', '-b', deck], capture_output=True, text=True).stdout
     keep = [l for l in out.splitlines()
-            if re.match(r'(CL =|Rs|Vocm =|[a-c]\)|f = |\s+No\. Harmonics|10 mV|\d[\d.]*(k|meg)?\s{2,})', l)]
+            if re.match(r'(CL =|Rs|npn \(|pnp \(|jump:|Vocm =|[a-c]\)|f = |f \(Hz\)|\s+No\. Harmonics|10 mV|\d[\d.]*(k|meg)?\s{2,}|[\d.]+(E\+\d+)?\s{3}[\d.])', l)]
     print('==', deck); print('\n'.join(keep)); print()
     return out
 
@@ -193,4 +193,67 @@ for k, v in enumerate(['0', '1.5']):
     a.set_title(f'Vocm = {v} V', fontsize=12, loc='left'); a.set_xlabel('t, µs')
 ax[0].set_ylabel('V'); legend(ax[0], fontsize=9.5, ncol=2)
 save(fig, 'ex05_fda_swing.png')
+# --- 6. maximum peak output voltage vs frequency ---------------------------------------
+log = run('06_opamp_vom_vs_freq.cir')
+f, (vod, vlin) = load('ex06_vom.txt', 2)
+# uA741 datasheet curve (TI SLOS094H, Fig. 5-5: +/-15 V, RL = 10k), traced from the figure
+ds = np.loadtxt('ua741_vom_datasheet.dat')
+for fx in (2e4, 5e4, 1e5, 2e5):
+    print(f'  {fx/1e3:5.0f} kHz: model {np.interp(np.log(fx), np.log(f), vod):5.2f} V, '
+          f'datasheet {np.interp(np.log(fx), np.log(ds[:, 0]), ds[:, 1]):5.2f} V')
+fig, ax = plt.subplots(figsize=(7.6, 4.8))
+ax.semilogx(ds[:, 0], ds[:, 1], color=C[4], lw=3.2, alpha=0.55, label='µA741 datasheet (traced from the figure)')
+# smooth the 81 simulated points with a shape-preserving (monotone) cubic in log f;
+# a plain spline would overshoot at the knee. Falls back to straight lines without scipy.
+fs = np.logspace(2, 6, 800)
+try:
+    from scipy.interpolate import PchipInterpolator
+    smooth = lambda y: PchipInterpolator(np.log10(f), y)(np.log10(fs))
+except ImportError:
+    smooth = lambda y: np.interp(np.log10(fs), np.log10(f), y)
+ax.semilogx(fs, smooth(vod), color=C[0], lw=2.2, label='model, overdriven: peak output')
+ax.semilogx(fs, smooth(vlin), color=C[1], lw=2, ls='--', label='model, largest peak with THD ≤ 1 %')
+ax.semilogx(f, vod, 'o', color=C[0], ms=2.6)
+ax.semilogx(f, vlin, 'o', color=C[1], ms=2.6)
+ff = np.logspace(2, 6, 300)
+ax.semilogx(ff, np.minimum(vod[0], 0.5e6 / (4 * ff)), color=C[2], lw=1.6, ls=':', label='min(swing, SR/(4f)), SR = 0.5 V/µs')
+ax.set_xlim(100, 1e6); ax.set_ylim(0, 16)
+ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: {1e2: '100', 1e3: '1k', 1e4: '10k', 1e5: '100k', 1e6: '1M'}.get(v, '')))
+ax.set_xlabel('f, Hz'); ax.set_ylabel('maximum peak output, V'); legend(ax, fontsize=10)
+ax.set_title('inverting gain −1, ±15 V, RL = 10 kΩ, VHD = VLD = 1 V', fontsize=11, loc='left')
+save(fig, 'ex06_vom.png')
+# --- 7. follower large-signal pulse response ----------------------------------------------
+log = run('07_opamp_follower_pulse.cir')
+t, (vin, o1, o2) = load('ex07_pulse.txt', 3)
+t = t * 1e6
+ds = np.loadtxt('ua741_pulse_datasheet.dat')    # TI SLOS094H Fig. 5-10, traced from the figure
+m = (ds[:, 0] > 0.5) & (ds[:, 0] < 89)
+for lab, v in (('defaults', o1), ('KJUMP=0.27', o2)):
+    print(f'  RMS deviation from the datasheet, {lab}: {np.sqrt(np.mean((np.interp(ds[m, 0], t, v) - ds[m, 1]) ** 2)):.2f} V')
+fig, ax = plt.subplots(figsize=(7.6, 4.8))
+ax.plot(np.r_[-10, t], np.r_[-5, vin], color='#999', lw=1.2, ls='--', label='input')
+ax.plot(ds[:, 0], ds[:, 1], color=C[4], lw=3.2, alpha=0.55, label='µA741 datasheet (traced from the figure)')
+ax.plot(np.r_[-10, t], np.r_[-5, o1], color=C[0], lw=1.6, label='model, defaults (KJUMP = 0)')
+ax.plot(np.r_[-10, t], np.r_[-5, o2], color=C[2], lw=2, ls='--', label='model, KJUMP = 0.27 (fit)')
+ax.set_xlim(-10, 90); ax.set_ylim(-7, 11); ax.set_yticks(range(-6, 7, 2)); ax.set_xlabel('t, µs'); ax.set_ylabel('V')
+ax.legend(loc='upper center', ncol=2, fontsize=9, frameon=False, columnspacing=1.2, handlelength=1.8)
+ax.set_title('voltage follower, ±15 V, RL = 2 kΩ, CL = 100 pF', fontsize=11, loc='left')
+save(fig, 'ex07_pulse.png')
+# --- 8. follower jump: npn vs pnp input stage (Solomon 1974, Fig. 16) ----------------------
+log = run('08_opamp_follower_npn_pnp.cir')
+t, (vin, on, op, od) = load('ex08_npn_pnp.txt', 4)
+t = t * 1e6
+fig, axs = plt.subplots(3, 1, figsize=(9.6, 6.4), sharex=True)
+rows = ((vin, 'input $v_s(t)$', '#777777'),
+        (on, 'output, npn input stage\n(KJUMP = 0.25)', C[0]),
+        (op, 'output, pnp input stage\n(KJUMP = −0.25)', C[1]))
+for k, (ax, (v, lab, c)) in enumerate(zip(axs, rows)):
+    ax.plot(t, v, color=c, lw=2, label=lab)
+    if k:
+        ax.plot(t, od, color='#bbbbbb', lw=1.2, ls='--', label='KJUMP = 0 (no jump)')
+    ax.set_ylim(-1, 11.5); ax.set_yticks([0, 5, 10]); ax.set_ylabel('V')
+    ax.legend(loc='center left', bbox_to_anchor=(1.01, 0.5), fontsize=9, frameon=False)
+axs[-1].set_xlabel('t, µs')
+axs[0].set_title('follower, ±15 V, RL = 2 kΩ, CL = 100 pF; input 0 → 10 V → 0 (cf. Solomon 1974, Fig. 16)', fontsize=10, loc='left')
+save(fig, 'ex08_npn_pnp.png')
 print('figures written to', os.path.normpath(FIG))

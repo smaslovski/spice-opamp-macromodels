@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.3 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.4 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee outp outn vocm
 *   outp is the non-inverted output (in phase with inp), outn the inverted one.
@@ -13,6 +13,7 @@
 * DIFFERENTIAL-MODE (DM) PATH  (same structure as OPAMP_FULL)
 *   - DC gain A0, dominant pole, GBW, two extra poles (FP2, FP3)
 *   - input stage tanh() -> differential output slew rate SR
+*   - optional follower jump from the input-pair tail capacitance (KJUMP)
 *   - input CM range window, input R/C, optional differential clamp
 *     (anti-parallel diodes between inp and inn; no clamps to the rails)
 *   - VOS, IB/IOS, CMRR(f), PSRR(f), white + 1/f voltage noise, white + 1/f
@@ -55,6 +56,13 @@
 *   FP3     Hz     1G       third pole
 *   SR      V/s    200Meg   slew rate of the DIFFERENTIAL output
 *                           (each output slews at SR/2)
+*   KJUMP   -      0        input-pair tail capacitance: output jump / fast
+*                           input common-mode step (large-signal follower
+*                           response); 0 = off. The sign gives the input-pair
+*                           polarity: > 0 npn/nmos (jump on rising edges),
+*                           < 0 pnp/pmos/p-JFET (jump on falling edges).
+*                           uA741 (datasheet pulse response): KJUMP ~0.27
+*                           with the default SR
 *  Input DC errors and impedance
 *   VOS     V      1m       input offset voltage, in series with the + input
 *   IB      A      2u       input bias current (average of the two pins);
@@ -139,7 +147,7 @@ Hd  out na Vs {K*TAUZ/CD}
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
 + ROUT=10 ISRC=50m ISNK=50m VXO=0 COUT=1p
-+ VCLMP=100 RCLMP=100
++ VCLMP=100 RCLMP=100 KJUMP=0
 + A0CM=10k GBWCM=50Meg FPCM2=200Meg SRCM=100Meg VOSCM=1m
 + RVOCM=50k CVOCM=1p
 
@@ -218,8 +226,33 @@ Xps2 nps2i nps2 FDZCPL PARAMS: K={1/PSRRN} FZ={FPSRR}
 Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)
 Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-{ICMLO})/{VK}))*(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn)))/{VK})),1e-3)
 
+* ---- input-pair tail capacitance (KJUMP) ----------------------------------------
+* The tail (common) node of the input pair follows the higher (KJUMP > 0,
+* npn/nmos) or lower (KJUMP < 0, pnp/pmos) input (Solomon, IEEE JSSC 1974).
+* TPL = sign(KJUMP). When a fast input step drives the tail, its charging
+* current u = TPL*I(Vtl) > 0 is
+* steered to the gain node, so the output of a follower jumps by |KJUMP| times
+* the input step (in the uA741 the charge reaches the joined bases of the
+* lateral pnps through an emitter-base junction, with current gain). On the
+* other edge the tail follows the output slowly; its discharge current is
+* small and is not modelled (u < 0 is ignored). Only input common-mode motion
+* matters: a resistive inverter shows a smaller effect (its summing node moves
+* while the output slews); small-signal analyses are unaffected.
+.param TPL={KJUMP<0 ? -1 : 1}
+.param KTC={max(abs(KJUMP),1e-12)}
+Btl  ntl0 0 V = 0.5*(V(inp)+V(inn))+{0.5*TPL}*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+2.5e-3)
+* Ctl has a noiseless series resistance (time constant 1/(2*pi*FP3)): the
+* sensed current is then a smooth state, not the step-to-step ringing that
+* trapezoidal integration gives in a capacitor driven by an ideal source
+* (the max() below would rectify that ringing).
+.param RTL={1/(PI2*FP3*KTC*C1V)}
+Vtl  ntl0 ntl 0
+Gtl  ntl ntlc ntl ntlc {1/RTL}
+Ctl  ntlc 0 {KTC*C1V}
+Rtllk ntlc 0 1e15
+
 * ---- DM gain node: n1 = differential output voltage ---------------------------
-Bgm  0 n1 I = {IMAXV}*V(nwin)*tanh({GM0}*V(vd)/{IMAXV})
+Bgm  0 n1 I = tanh({GM0}*V(vd)/{IMAXV})*({IMAXV}*V(nwin)+max({TPL}*I(Vtl),0))
 G1   n1 0 n1 0 {1/R1V}
 C1   n1 0 {C1V}
 R1lk n1 0 1e15
@@ -286,7 +319,7 @@ Glkn outn 0 outn 0 1e-8
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
 + ROUT=10 ISRC=50m ISNK=50m VXO=0 COUT=1p
-+ VCLMP=100 RCLMP=100
++ VCLMP=100 RCLMP=100 KJUMP=0
 + A0CM=10k GBWCM=50Meg FPCM2=200Meg SRCM=100Meg VOSCM=1m
 + RVOCM=50k CVOCM=1p
 Xc inp inn vcc vee outp outn vocm ncm ncm FDOPAMP_CORE PARAMS:
@@ -298,7 +331,7 @@ Xc inp inn vcc vee outp outn vocm ncm ncm FDOPAMP_CORE PARAMS:
 + ENOISE={ENOISE} FCEN={FCEN} INOISE={INOISE} FCIN={FCIN}
 + ICCQ={ICCQ} VHD={VHD} VLD={VLD} ICMHI={ICMHI} ICMLO={ICMLO} VK={VK}
 + ROUT={ROUT} ISRC={ISRC} ISNK={ISNK} VXO={VXO} COUT={COUT}
-+ VCLMP={VCLMP} RCLMP={RCLMP}
++ VCLMP={VCLMP} RCLMP={RCLMP} KJUMP={KJUMP}
 + A0CM={A0CM} GBWCM={GBWCM} FPCM2={FPCM2} SRCM={SRCM} VOSCM={VOSCM}
 + RVOCM={RVOCM} CVOCM={CVOCM}
 .ends FDOPAMP_FULL

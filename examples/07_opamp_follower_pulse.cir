@@ -1,0 +1,41 @@
+* Example 7 - OPAMP_FULL: voltage-follower large-signal pulse response
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unique model feature shown:
+*  the input-pair tail capacitance: in a follower the tail node of the input
+*  pair jumps with a fast input step, and its charging current reaches the
+*  gain node. The output jumps by KJUMP times the input step on the rising
+*  edge (npn input, KJUMP > 0) and then slews at SR; the falling edge only slews.
+*  With the default SR, KJUMP = 0.27 is the least-squares fit to the uA741
+*  datasheet curve.
+* Conditions of the uA741 datasheet figure: +/-15 V, RL = 2k, CL = 100 pF,
+* input -5 V -> +5 V at t = 0 and back at 44.6 us.
+*   X1: library defaults (KJUMP = 0: no jump)
+*   X2: KJUMP = 0.27
+.include ../models/opamp_full.lib
+Vcc vcc 0 15
+Vee vee 0 -15
+Vin in 0 PULSE(-5 5 0 20n 20n 44.6u 200u)
+X1  in o1 vcc vee o1 OPAMP_FULL
+RL1 o1 0 2k
+CL1 o1 0 100p
+X2  in o2 vcc vee o2 OPAMP_FULL PARAMS: KJUMP=0.27
+RL2 o2 0 2k
+CL2 o2 0 100p
+
+.control
+tran 20n 90u 0 20n
+* output right after the rising step, and the slew rates of both edges
+meas tran j1 find v(o1) at=0.3u
+meas tran j2 find v(o2) at=0.3u
+let dv1 = deriv(v(o1))/1e6
+let dv2 = deriv(v(o2))/1e6
+meas tran r1 avg dv1 from=5u to=10u
+meas tran r2 avg dv2 from=5u to=10u
+meas tran f1 avg dv1 from=50u to=58u
+meas tran f2 avg dv2 from=50u to=58u
+echo "a) defaults:   v(0.3us) = $&j1 V, rise $&r1 V/us, fall $&f1 V/us"
+echo "b) KJUMP=0.27: v(0.3us) = $&j2 V, rise $&r2 V/us, fall $&f2 V/us"
+wrdata ex07_pulse.txt v(in) v(o1) v(o2)
+plot v(in) v(o1) v(o2)
+.endc
+.end

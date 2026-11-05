@@ -1,0 +1,44 @@
+* Example 8 - OPAMP_FULL: follower jump for npn and pnp input stages
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unique model feature shown:
+*  the edge that jumps depends on the input-pair polarity (Solomon, IEEE JSSC
+*  1974, Fig. 16). The tail node of an npn pair follows the higher input, so a
+*  fast positive step drives it and the output jumps on the rising edge; a pnp
+*  pair follows the lower input and jumps on the falling edge. The sign of KJUMP
+*  selects the polarity; the other edge only slews.
+* Follower, +/-15 V, RL = 2k, CL = 100 pF; input 0 -> 10 V at 5 us, back at 45 us.
+*   Xn: npn input stage, KJUMP = 0.25
+*   Xp: pnp input stage, KJUMP = -0.25
+*   Xd: no jump (KJUMP = 0), for reference
+.include ../models/opamp_full.lib
+Vcc vcc 0 15
+Vee vee 0 -15
+Vin in 0 PULSE(0 10 5u 20n 20n 40u 200u)
+Xn  in on vcc vee on OPAMP_FULL PARAMS: KJUMP=0.25
+RLn on 0 2k
+CLn on 0 100p
+Xp  in op vcc vee op OPAMP_FULL PARAMS: KJUMP=-0.25
+RLp op 0 2k
+CLp op 0 100p
+Xd  in od vcc vee od OPAMP_FULL
+RLd od 0 2k
+CLd od 0 100p
+
+.control
+tran 20n 80u 0 20n
+* output 0.3 us after each edge: the jump (theory 0.964*2.5 V = 2.41 V) plus 0.14 V of slew
+meas tran nr find v(on) at=5.3u
+meas tran nf find v(on) at=45.3u
+meas tran pr find v(op) at=5.3u
+meas tran pf find v(op) at=45.3u
+meas tran dr find v(od) at=5.3u
+meas tran df find v(od) at=45.3u
+let jn = nr-dr
+let jp = pf-df
+echo "npn (KJUMP>0):  rising edge $&nr V (no-jump reference $&dr V), falling edge $&nf V"
+echo "pnp (KJUMP<0): rising edge $&pr V, falling edge $&pf V (no-jump reference $&df V)"
+echo "jump: npn rising $&jn V, pnp falling $&jp V"
+wrdata ex08_npn_pnp.txt v(in) v(on) v(op) v(od)
+plot v(in) v(on) v(op) v(od)
+.endc
+.end

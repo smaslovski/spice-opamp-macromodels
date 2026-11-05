@@ -66,6 +66,23 @@ Rs10 s10 p10 100k
 Rf10 o10 n10 100k
 Vin10 s10 0 0 AC 1
 
+* --- 11. Follower with input-pair tail capacitance KJUMP = 0.25, same step as 2 -
+*         expected: output jumps by KJUMP*10 V at the rising edge. While slewing
+*         the loop is open, so the output sees RL/(RL+ROUT) = 0.964 of the gain
+*         node: expected jump 0.964*2.5 V = 2.41 V; the falling edge is unchanged
+X11  p2 o11 vcc vee o11 OPAMP_FULL PARAMS: KJUMP=0.25
+Rl11 o11 0 2k
+
+* --- 12. Same with pnp/pmos polarity (KJUMP = -0.25): the jump moves to the falling
+*         edge (expected -2.41 V), the rising edge is unchanged
+X12  p2 o12 vcc vee o12 OPAMP_FULL PARAMS: KJUMP=-0.25
+Rl12 o12 0 2k
+
+* --- 13. Asymmetric slew: SRR = 0.5 V/us, SRF = 1 V/us, same step as 2 ---------
+*         expected: rising slew unchanged (ratio 1), falling slew doubled
+X13  p2 o13 vcc vee o13 OPAMP_FULL PARAMS: SRR=0.5Meg SRF=1Meg
+Rl13 o13 0 2k
+
 .control
   op
   echo "--- DC operating point ---"
@@ -115,6 +132,26 @@ Vin10 s10 0 0 AC 1
   meas tran t_lo when v(o2)=vlo cross=last from=10u to=48u
   let t_settle = 0.5*(t_hi+t_lo+abs(t_hi-t_lo)) - 10u
   print t_settle
+  * test 11: tail-capacitance jump (theory: jump 2.41 V, fall-time ratio 1)
+  meas tran v11 find v(o11) at=10.3u
+  meas tran v2r find v(o2) at=10.3u
+  let jump11 = v11 - v2r
+  meas tran t_fall11 trig v(o11) val=4 fall=1 targ v(o11) val=-4 fall=1
+  let fall_ratio11 = t_fall11/t_fall
+  print jump11 fall_ratio11
+  * test 12: KJUMP = -0.25 (theory: jump -2.41 V on the falling edge, rise-time ratio 1)
+  meas tran v12 find v(o12) at=50.3u
+  meas tran v2f find v(o2) at=50.3u
+  let jump12 = v12 - v2f
+  meas tran t_rise12 trig v(o12) val=-4 rise=1 targ v(o12) val=4 rise=1
+  let rise_ratio12 = t_rise12/t_rise
+  print jump12 rise_ratio12
+  * test 13: asymmetric slew (theory: rise ratio 1, fall slew ratio 2)
+  meas tran t_rise13 trig v(o13) val=-4 rise=1 targ v(o13) val=4 rise=1
+  meas tran t_fall13 trig v(o13) val=4 fall=1 targ v(o13) val=-4 fall=1
+  let rise_ratio13 = t_rise13/t_rise
+  let fall_sr_ratio13 = t_fall/t_fall13
+  print rise_ratio13 fall_sr_ratio13
   plot v(p2) v(o2) title 'Follower step (slew rate)'
 
   dc Vin4 -3 3 0.05

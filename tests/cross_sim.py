@@ -50,6 +50,17 @@ CASES = {
     'tran_slew': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(-5 5 1u 1n 1n 50u 100u)\n"
                   "X1 in out vcc vee out OPAMP_FULL\n", ".tran 10n 40u",
                   [('t90', 'tran', 'V(out)=4', 1e-3), ('vend', 'tran', 'V(out)@30u', 1e-4)]),
+    'tran_tail': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(-5 5 1u 20n 20n 44.6u 200u)\n"
+                  "X1 in out vcc vee out OPAMP_FULL PARAMS: KJUMP=0.27\nRL out 0 2k\nCL out 0 100p\n", ".tran 10n 70u",
+                  [('vjump', 'tran', 'V(out)@1.3u', 2e-3), ('vrise', 'tran', 'V(out)@10u', 5e-3),
+                   ('vfall', 'tran', 'V(out)@52u', 5e-3)]),
+    'tran_tailneg': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(-5 5 1u 20n 20n 44.6u 200u)\n"
+                     "X1 in out vcc vee out OPAMP_FULL PARAMS: KJUMP=-0.27\nRL out 0 2k\nCL out 0 100p\n", ".tran 10n 70u",
+                     [('vrise', 'tran', 'V(out)@5u', 5e-3), ('vjumpf', 'tran', 'V(out)@45.9u', 2e-3),
+                      ('vfall', 'tran', 'V(out)@55u', 5e-3)]),
+    'tran_srasym': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(-5 5 1u 1n 1n 30u 100u)\n"
+                    "X1 in out vcc vee out OPAMP_FULL PARAMS: SRR=0.5Meg SRF=1Meg\nRL out 0 2k\n", ".tran 10n 60u",
+                    [('vrise', 'tran', 'V(out)@8u', 2e-3), ('vfall', 'tran', 'V(out)@35u', 5e-3)]),
     'tran_clip': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(0 -2 1u 1n 1n 20u 100u)\nR1 in m 1k\n"
                   "R2 m out 10k\nX1 0 m vcc vee out OPAMP_FULL\n", ".tran 10n 60u",
                   [('vslew', 'tran', 'V(out)@15u', 1e-3)]),
@@ -134,6 +145,8 @@ def run_lt(name, exe):
     open(cir, 'w').write(deck(name, 'lt'))
     cmd = ([exe] if os.name == 'nt' else ['wine', exe]) + ['-b', os.path.basename(cir)]
     subprocess.run(cmd, cwd=OUT, capture_output=True, timeout=300, env=wine_env('LTSPICE'))
+    if not os.path.exists(cir[:-4] + '.log'):
+        return {'_errors': ['no log file (LTspice did not run)']}
     raw = open(cir[:-4] + '.log', 'rb').read()
     txt = raw.decode('utf-16-le') if raw[1:2] == b'\x00' else raw.decode('latin-1')
     res = {m: float(v) for m, v in re.findall(r'^(\w+): .*?=\(?([-0-9.eE+]+)', txt, re.M)}

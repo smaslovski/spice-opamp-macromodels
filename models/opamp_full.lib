@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.3 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.4 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee out
 *
@@ -17,6 +17,8 @@
 * NONLINEAR EFFECTS
 *   - input offset voltage, input bias and offset currents
 *   - input stage tanh() characteristic  -> slew rate and large-signal THD
+*   - optional separate rising / falling slew rates (SRR, SRF)
+*   - optional follower jump from the input-pair tail capacitance (KJUMP)
 *   - input common-mode range (gm collapses near the rails)
 *   - optional differential input clamp: anti-parallel diodes between inp
 *     and inn (VCLMP, RCLMP); no clamps to the rails
@@ -69,6 +71,18 @@
 *   FP2     Hz     3Meg     second pole
 *   FP3     Hz     10Meg    third pole
 *   SR      V/s    0.5Meg   slew rate (0.5Meg = 0.5 V/us)
+*   SRR     V/s    0        slew rate of the rising (positive-going) output;
+*                           0 = SR
+*   SRF     V/s    0        slew rate of the falling (negative-going) output;
+*                           0 = SR. LF155 datasheet pulse photo: SRR ~5.5Meg,
+*                           SRF ~11Meg
+*   KJUMP   -      0        input-pair tail capacitance: output jump / fast
+*                           input common-mode step (large-signal follower
+*                           response); 0 = off. The sign gives the input-pair
+*                           polarity: > 0 npn/nmos (jump on rising edges),
+*                           < 0 pnp/pmos/p-JFET (jump on falling edges).
+*                           uA741 (datasheet pulse response): KJUMP ~0.27
+*                           with the default SR
 *  Input DC errors and impedance
 *   VOS     V      1m       input offset voltage, in series with the + input
 *   IB      A      80n      input bias current (average of the two pins);
@@ -139,7 +153,7 @@ Hd  out na Vs {K*TAUZ/CD}
 *------------------------------------------------------------------------------
 .subckt OPAMP_FULL inp inn vcc vee out
 + PARAMS:
-+ A0=200k GBW=1Meg SR=0.5Meg FP2=3Meg FP3=10Meg
++ A0=200k GBW=1Meg SR=0.5Meg SRR=0 SRF=0 FP2=3Meg FP3=10Meg
 + VOS=1m IB=80n IOS=20n
 + RID=2Meg CID=1.4p RIC=400Meg CIC=0.75p
 + CMRR=31.6k FCMRR=200 PSRRP=31.6k PSRRN=31.6k FPSRR=100 VCCN=15 VEEN=-15
@@ -147,12 +161,15 @@ Hd  out na Vs {K*TAUZ/CD}
 + ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
 + ICCQ=1.7m VHD=2 VLD=2 ICMHI=2 ICMLO=2 VK=0.15
 + ROUT=75 ISRC=25m ISNK=25m VXO=2m COUT=3p
-+ VCLMP=100 RCLMP=100
++ VCLMP=100 RCLMP=100 KJUMP=0
 
 * ---- derived constants -------------------------------------------------------
 .param PI2=6.283185307
 .param C1V=30p
-.param IMAXV={SR*C1V}              ; input-stage tail current -> slew rate
+.param SRRV={SRR>0 ? SRR : SR}
+.param SRFV={SRF>0 ? SRF : SR}
+.param IMAXV={0.5*(SRRV+SRFV)*C1V}  ; mean input-stage current limit -> slew rate
+.param IDIFV={0.5*(SRRV-SRFV)*C1V}  ; half the difference (asymmetric slew)
 .param GM0={PI2*GBW*C1V}           ; small-signal transconductance -> GBW
 .param R1V={A0/GM0}                ; DC gain A0 = GM0*R1V
 .param VNTH={sqrt(4*1.380649e-23*300.15*1e3)}   ; thermal noise of 1k at 27C
@@ -240,8 +257,37 @@ Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)
 * ---- input common-mode range window (0..1, 0.5 at the ICMR edge) ---------------
 Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-{ICMLO})/{VK}))*(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn)))/{VK})),1e-3)
 
+* ---- input-pair tail capacitance (KJUMP) ----------------------------------------
+* The tail (common) node of the input pair follows the higher (KJUMP > 0,
+* npn/nmos) or lower (KJUMP < 0, pnp/pmos) input (Solomon, IEEE JSSC 1974).
+* TPL = sign(KJUMP). When a fast input step drives the tail, its charging
+* current u = TPL*I(Vtl) > 0 is
+* steered to the gain node, so the output of a follower jumps by |KJUMP| times
+* the input step (in the uA741 the charge reaches the joined bases of the
+* lateral pnps through an emitter-base junction, with current gain). On the
+* other edge the tail follows the output slowly; its discharge current is
+* small and is not modelled (u < 0 is ignored). Only input common-mode motion
+* matters: a resistive inverter shows a smaller effect (its summing node moves
+* while the output slews); small-signal analyses are unaffected.
+.param TPL={KJUMP<0 ? -1 : 1}
+.param KTC={max(abs(KJUMP),1e-12)}
+Btl  ntl0 0 V = 0.5*(V(inp)+V(inn))+{0.5*TPL}*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+2.5e-3)
+* Ctl has a noiseless series resistance (time constant 1/(2*pi*FP3)): the
+* sensed current is then a smooth state, not the step-to-step ringing that
+* trapezoidal integration gives in a capacitor driven by an ideal source
+* (the max() below would rectify that ringing).
+.param RTL={1/(PI2*FP3*KTC*C1V)}
+Vtl  ntl0 ntl 0
+Gtl  ntl ntlc ntl ntlc {1/RTL}
+Ctl  ntlc 0 {KTC*C1V}
+Rtllk ntlc 0 1e15
+
 * ---- input stage + dominant pole (tanh gives slew limiting) ------------------
-Bgm  0 n1 I = {IMAXV}*V(nwin)*tanh({GM0}*V(vd)/{IMAXV})
+* The current limit IL = IMAXV + IDIFV*tanh(4*GM0*vd/IMAXV) moves smoothly from
+* SRF*C1V (vd < 0) to SRR*C1V (vd > 0) well before the tanh saturates, so the
+* output slews at SRR up and SRF down. The small-signal gm stays GM0 at vd = 0
+* (IL cancels to first order); with SRR = SRF the stage is the plain tanh.
+Bgm  0 n1 I = tanh({GM0}*V(vd)/({IMAXV}+{IDIFV}*tanh({4*GM0/IMAXV}*V(vd))))*(({IMAXV}+{IDIFV}*tanh({4*GM0/IMAXV}*V(vd)))*V(nwin)+max({TPL}*I(Vtl),0))
 G1   n1 0 n1 0 {1/R1V}
 C1   n1 0 {C1V}
 R1lk n1 0 1e15

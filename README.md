@@ -21,7 +21,7 @@ overload and saturation behaviour.
 | `models/fdopamp_full.lib` | `FDOPAMP_FULL` (fully differential amplifier) and `FDOPAMP_CORE` (the same with the common-mode loop brought out for loop-gain tests) |
 | `models/pspice/` | the same two libraries for PSpice, generated from the ones above by `tools/make_pspice_port.py` |
 | `tests/` | characterization decks that measure every specified quantity and print it, and `cross_sim.py`, which compares ngspice, LTspice and PSpice |
-| `examples/` | five example netlists and `run_examples.py`, which runs them and draws the figures |
+| `examples/` | eight example netlists and `run_examples.py`, which runs them and draws the figures |
 | `docs/examples_slides.pdf` | slides with the examples: stability, noise, nonlinear effects |
 | `docs/figures/` | figures produced by `run_examples.py` |
 
@@ -41,8 +41,9 @@ overload and saturation behaviour.
 
 **Nonlinear**
 - input offset voltage, bias and offset currents (`IB > 0` flows into the pins)
-- a `tanh()` input transconductor: one mechanism gives both the slew rate `SR` and a realistic growth of distortion as the signal approaches the full-power bandwidth
+- a `tanh()` input transconductor: one mechanism gives both the slew rate `SR` and a realistic growth of distortion as the signal approaches the full-power bandwidth. Optionally the rising and falling slew rates differ (`SRR`, `SRF`; OPAMP_FULL), as in many BiFET op amps, without changing the small-signal gain
 - input common-mode range with a soft edge (the input stage's gm collapses near the rails)
+- optional input-pair tail capacitance (`KJUMP`): the classic asymmetric follower pulse response (Solomon, IEEE JSSC 1974), in which a fast input step makes the output jump before it slews. The jump is set directly, because the charging path of the tail node can have current gain (in the µA741 the jump is larger than the tail capacitance alone would give). Small-signal behaviour is unchanged
 - optional differential input clamp: two anti-parallel diodes between `inp` and `inn` (`VCLMP`, `RCLMP`); no clamps to the rails
 - output swing limited by the supplies (`VHD`, `VLD` headroom) with a soft clamp of the gain node, so the output recovers from saturation immediately
 - output current limit (`ISRC`, `ISNK`) and a class-AB crossover region (`VXO`) in which the small-signal output resistance doubles
@@ -106,6 +107,8 @@ suffixes (`k`, `Meg`, `G`, `m`, `u`, `n`, `p`, `f`).
 | `GBW` | Hz | gain-bandwidth product: unity-gain frequency of the dominant-pole response | 1Meg | 100Meg |
 | `FP2`, `FP3` | Hz | second and third (non-dominant) poles | 3Meg, 10Meg | 300Meg, 1G |
 | `SR` | V/s | slew rate; for the FDA the slew rate of the differential output (each output slews at `SR/2`) | 0.5Meg | 200Meg |
+| `SRR`, `SRF` | V/s | OPAMP_FULL only: slew rates of the rising and falling output; 0 = `SR`. The LF155 datasheet pulse photo gives about 5.5Meg / 11Meg | 0 | – |
+| `KJUMP` | – | input-pair tail capacitance: output jump divided by a fast input common-mode step (the fast edge of a follower); 0 = off. The sign gives the input-pair polarity: positive for npn/nmos (jump on rising edges), negative for pnp/pmos/p-JFET (jump on falling edges). µA741 datasheet pulse response: `KJUMP` ≈ 0.27 with the default `SR` | 0 | 0 |
 
 **Input: DC errors and impedance**
 
@@ -183,7 +186,7 @@ parameter set for a 5 V CMOS rail-to-rail op amp is given at the end of `opamp_f
 
 ## Examples
 
-The five examples are described in [docs/examples_slides.pdf](docs/examples_slides.pdf).
+Examples 1–8 are described in [docs/examples_slides.pdf](docs/examples_slides.pdf).
 Each one shows behaviour that simpler macromodels do not reproduce.
 
 | Example | What it shows | Key result |
@@ -193,6 +196,15 @@ Each one shows behaviour that simpler macromodels do not reproduce.
 | `03_opamp_noise.cir` | input-referred noise for three source resistances; noise figure vs source resistance | simulated / theory = 1.0000 (1 Hz–10 kHz, sources up to 40 kΩ); NF minimum 3.67 dB at `ENOISE/INOISE` = 40 kΩ |
 | `04_opamp_large_signal.cir` | slew rate, THD vs frequency, clipping and recovery, current limit and supply current | slew 0.50 V/µs; THD 0.001 % at 2 kHz, 0.5 % at `SR/(2πVp)` = 8 kHz, 6.6 % at 10 kHz; clipping at ±12.44 V into 2 kΩ; 25 mA limit, supply current 26.7 mA |
 | `05_fda_swing_vocm.cir` | FDA differential swing for two output CM voltages | ±7.41 V at `Vocm` = 0, ±4.49 V at `Vocm` = 1.5 V; output CM held within 1 mV while clipping |
+| `06_opamp_vom_vs_freq.cir` | maximum peak output voltage vs frequency, 20 points per decade from 100 Hz to 1 MHz, compared with the µA741 datasheet curve (traced from the figure, `ua741_vom_datasheet.dat`); runs about 3 min | overdriven: ±13.9 V up to 8 kHz, then the slew-limited triangle peak `SR/(4f)`: 6.16 V at 20 kHz (datasheet 6.17 V); above 50 kHz the datasheet is 20–40 % higher. The largest peak with THD ≤ 1 % rolls off an octave earlier (3.75 V at 20 kHz) |
+| `07_opamp_follower_pulse.cir` | voltage-follower large-signal pulse response (±5 V, 2 kΩ ∥ 100 pF) compared with the µA741 datasheet curve (`ua741_pulse_datasheet.dat`) | defaults: no jump, 0.48 V/µs on both edges. `KJUMP=0.27`: 0.3 µs after the step the output is at −2.32 V (datasheet −2.46 V), then it slews at 0.48 V/µs (datasheet 0.508 rising, 0.475 falling); RMS deviation from the datasheet curve 0.06 V (1.16 V with the defaults) |
+| `08_opamp_follower_npn_pnp.cir` | the same jump for npn and pnp input stages (`KJUMP` = 0.25 and −0.25), follower with a 0 → 10 V → 0 pulse, as in Solomon (1974), Fig. 16 | npn: the output jumps 2.38 V on the rising edge; pnp: it drops 2.37 V on the falling edge (theory 0.964 · 2.5 V = 2.41 V); the other edge slews at 0.48 V/µs as without the jump |
+
+![Maximum peak output voltage vs frequency, from example 6](docs/figures/ex06_vom.png)
+
+![Voltage-follower pulse response with the input-pair tail capacitance, from example 7](docs/figures/ex07_pulse.png)
+
+![Follower jump for npn and pnp input stages, from example 8](docs/figures/ex08_npn_pnp.png)
 
 The loop-gain examples combine two AC runs (series voltage injection, shunt current injection)
 inside the ngspice control block, so one run of the netlist gives the final loop gain T and the
@@ -215,6 +227,9 @@ ngspice-42 and the default parameters:
 | supply current | 1.71 mA | DM / CM loop gain, gain-4 stage | 19.3 MHz, 77° / 48.5 MHz, 76° |
 | noise vs theory | within 0.02 % | output noise vs theory | within 0.1 % |
 | 1/f current noise (`FCIN` = 2k) | within 0.03 % | 1/f current noise (`FCIN` = 10k) | within 0.01 % |
+| tail capacitance `KJUMP` = 0.25: follower jump / falling 10–90 % time ratio | 2.39 V (theory 2.41 V) / 1.000 (1) | | |
+| `KJUMP` = −0.25: jump on the falling edge / rising time ratio | −2.39 V (theory −2.41 V) / 1.000 (1) | | |
+| `SRR` = 0.5Meg, `SRF` = 1Meg: rising time ratio / falling slew ratio | 1.000 (1) / 2.000 (2) | | |
 
 `tests/fd_middlebrook.cir` also checks the Middlebrook loop gains of the FDA against a
 conventional L/C loop break (CM: identical; DM: within 0.5 %, the residual being the loading
@@ -231,7 +246,7 @@ error of the L/C reference).
 | HSPICE, Spectre | not supported: they need their own port (no B-sources) |
 
 The main libraries use B-sources (`tanh`, `min`, `max`, `sqrt`), subcircuit parameters with
-`PARAMS:`, the C-style `?:` in one parameter expression and the diode `KF`/`AF` flicker-noise
+`PARAMS:`, the C-style `?:` in a few parameter expressions and the diode `KF`/`AF` flicker-noise
 parameters. Two details keep them portable:
 
 - Model-internal resistors are self-controlled `G` elements, the one noiseless resistor

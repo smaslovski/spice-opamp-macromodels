@@ -108,7 +108,7 @@ suffixes (`k`, `Meg`, `G`, `m`, `u`, `n`, `p`, `f`).
 | `FP2`, `FP3` | Hz | second and third (non-dominant) poles | 3Meg, 10Meg | 300Meg, 1G |
 | `SR` | V/s | slew rate; for the FDA the slew rate of the differential output (each output slews at `SR/2`) | 0.5Meg | 200Meg |
 | `SRR`, `SRF` | V/s | OPAMP_FULL only: slew rates of the rising and falling output; 0 = `SR`. The LF155 datasheet pulse photo gives about 5.5Meg / 11Meg | 0 | – |
-| `KJUMP` | – | input-pair tail capacitance: output jump divided by a fast input common-mode step (the fast edge of a follower); 0 = off. The sign gives the input-pair polarity: positive for npn/nmos (jump on rising edges), negative for pnp/pmos/p-JFET (jump on falling edges). µA741 datasheet pulse response: `KJUMP` ≈ 0.27 with the default `SR` | 0 | 0 |
+| `KJUMP` | – | input-pair tail capacitance effect: in an unloaded voltage follower, output jump divided by a fast input common-mode step; 0 = off. The sign gives the input-pair polarity: positive for npn/nmos (jump on rising edges), negative for pnp/pmos/p-JFET (jump on falling edges). µA741 datasheet pulse response: `KJUMP` ≈ 0.27 with the default `SR` | 0 | 0 |
 
 **Input: DC errors and impedance**
 

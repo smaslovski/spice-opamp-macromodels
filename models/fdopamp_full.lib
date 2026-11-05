@@ -1,9 +1,9 @@
 *==============================================================================
-* FDOPAMP_FULL - behavioural fully differential op-amp macromodel (ngspice)
+* FDOPAMP_FULL - behavioural fully differential op-amp macromodel (ngspice, LTspice)
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.2 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.3 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee outp outn vocm
 *   outp is the non-inverted output (in phase with inp), outn the inverted one.
@@ -38,6 +38,13 @@
 *   - FDOPAMP_CORE exposes the single-ended CM control path through the pins
 *     cmo (CM amplifier output) and cmi (output-stage CM input), so that the
 *     CM loop can be opened for loop-gain tests. FDOPAMP_FULL joins them.
+*   - Portability (v1.3): tested in ngspice-42 and LTspice 26 (identical
+*     DC/AC/transient/noise results). White e_n is passed through the E
+*     source Ewn (LTspice ignores the noise of a resistor that is read only
+*     inside a B-source expression). Nodes that otherwise see only G
+*     elements and capacitors get a 1e15 ohm DC path to ground (R*lk), which
+*     satisfies the floating-node checks of LTspice/PSpice; their effect on
+*     gain and noise is negligible. PSpice/HSPICE need a port (no B sources).
 *
 * PARAMETERS  (name, unit, default, meaning)
 *  Gain and frequency response
@@ -117,6 +124,7 @@ Ek  na 0 in 0 {K}
 Cd  in nx {CD}
 Gd  nx nv nx nv {6.283185307*FHI*CD}
 Vs  nv 0 0
+Rlk nx 0 1e15
 Hd  out na Vs {K*TAUZ/CD}
 .ends FDZCPL
 
@@ -174,6 +182,7 @@ Dp2  inn inp DIN
 
 * ---- noise sources -------------------------------------------------------------
 Rnv  nnv 0 1e3
+Ewn  nwn 0 nnv 0 {GENV}
 Rnp  nnp 0 1e3
 Rnn  nnn 0 1e3
 Gnp  0 inp nnp 0 {GNI}
@@ -206,22 +215,25 @@ Xps1 nps1i nps1 FDZCPL PARAMS: K={1/PSRRP} FZ={FPSRR}
 Bps2 nps2i 0 V = V(vee)-{VEEN}
 Xps2 nps2i nps2 FDZCPL PARAMS: K={1/PSRRN} FZ={FPSRR}
 
-Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+{GENV}*V(nnv)+V(nfl)
+Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)
 Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-{ICMLO})/{VK}))*(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn)))/{VK})),1e-3)
 
 * ---- DM gain node: n1 = differential output voltage ---------------------------
 Bgm  0 n1 I = {IMAXV}*V(nwin)*tanh({GM0}*V(vd)/{IMAXV})
 G1   n1 0 n1 0 {1/R1V}
 C1   n1 0 {C1V}
+R1lk n1 0 1e15
 * symmetric differential swing limit set by the headroom around Vocm
 Bdlim ndl 0 V = max(2*min(V(vcc)-{VHD}-V(vocm), V(vocm)-V(vee)-{VLD}), 10m)
 Bclp n1 0 I = {IMAXV/1e-3}*(max(V(n1)-V(ndl),0)+min(V(n1)+V(ndl),0))
 G2   0 n2 n1 0 1m
 G2r  n2 0 n2 0 1m
 C2   n2 0 {1/(PI2*FP2*1e3)}
+R2lk n2 0 1e15
 G3   0 n3 n2 0 1m
 G3r  n3 0 n3 0 1m
 C3   n3 0 {1/(PI2*FP3*1e3)}
+R3lk n3 0 1e15
 
 * ---- Vocm pin: noiseless divider to mid-supply ------------------------------------
 Gvo1 vcc vocm vcc vocm {1/(2*RVOCM)}
@@ -233,12 +245,14 @@ Bocs nocs 0 V = 0.5*(V(outp)+V(outn))
 Bgmc 0 nc1 I = {ICMV}*tanh({GMC}*(V(vocm)+{VOSCM}-V(nocs))/{ICMV})
 Gc1  nc1 0 nc1 0 {1/RCV}
 Cc1  nc1 0 {C1V}
+Rc1lk nc1 0 1e15
 Bchi nchi 0 V = V(vcc)-{VHD}
 Bclo nclo 0 V = V(vee)+{VLD}
 Bcclp nc1 0 I = {ICMV/1e-3}*(max(V(nc1)-V(nchi),0)+min(V(nc1)-V(nclo),0))
 Gc2  0 cmo nc1 0 1m
 Gc2r cmo 0 cmo 0 1m
 Cc2  cmo 0 {1/(PI2*FPCM2*1e3)}
+Rc2lk cmo 0 1e15
 
 * ---- output stages ----------------------------------------------------------------
 Bdp  ndp 0 V = V(cmi)+0.5*V(n3)

@@ -1,7 +1,8 @@
 # spice-opamp-macromodels
 
 Parametrized behavioural macromodels of an **operational amplifier** (`OPAMP_FULL`) and a
-**fully differential amplifier** (`FDOPAMP_FULL`) for [ngspice](https://ngspice.sourceforge.io/).
+**fully differential amplifier** (`FDOPAMP_FULL`) for [ngspice](https://ngspice.sourceforge.io/)
+and LTspice.
 
 Both models are set up directly from datasheet-style parameters (gain, gain-bandwidth, slew
 rate, offsets, noise densities, swing, current limits, …) and reproduce the principal
@@ -18,7 +19,7 @@ overload and saturation behaviour.
 |---|---|
 | `models/opamp_full.lib` | `OPAMP_FULL` (single-ended op amp) |
 | `models/fdopamp_full.lib` | `FDOPAMP_FULL` (fully differential amplifier) and `FDOPAMP_CORE` (the same with the common-mode loop brought out for loop-gain tests) |
-| `tests/` | characterization decks that measure every specified quantity and print it |
+| `tests/` | characterization decks that measure every specified quantity and print it, and `cross_sim.py`, which compares ngspice and LTspice |
 | `examples/` | five example netlists and `run_examples.py`, which runs them and draws the figures |
 | `docs/examples_slides.pdf` | slides with the examples: stability, noise, nonlinear effects |
 | `docs/figures/` | figures produced by `run_examples.py` |
@@ -84,7 +85,9 @@ python3 run_examples.py                   # all examples in batch mode, prints r
 ```
 
 `run_examples.py` needs Python 3 with numpy and matplotlib. The test decks are run the same
-way, from `tests/`.
+way, from `tests/`. `python3 cross_sim.py` in `tests/` runs a set of DC, AC, noise and
+transient measurements in ngspice and, if it finds LTspice (or `--ltspice PATH`), in LTspice
+too, and compares them.
 
 ## Parameters
 
@@ -215,10 +218,25 @@ error of the L/C reference).
 
 ## Compatibility
 
-Developed and tested with **ngspice-42**. The models use B-sources (`tanh`, `min`, `max`,
-`sqrt`), subcircuit parameters with `PARAMS:` and the diode `KF`/`AF` flicker-noise
-parameters. `OPAMP_FULL` has also been used through the ngspice back end of the KiCad 9
-simulator. Other SPICE dialects (LTspice, Xyce, PSpice) have not been tested.
+| Simulator | Status |
+|---|---|
+| ngspice-42 | developed and verified here; also used through the ngspice back end of the KiCad 9 simulator |
+| LTspice 26 | tested with `tests/cross_sim.py`: DC, AC, transient and noise results agree with ngspice to 4–6 digits |
+| QSPICE, Xyce | not tested; they support the constructs used (B-sources, `PARAMS:`, local `.param`, diode `KF`/`AF`) |
+| PSpice, HSPICE, Spectre | need a port: they have no B-sources (PSpice uses `E`/`G … VALUE={…}` and `IF()` instead of `?:`) |
+
+The models use B-sources (`tanh`, `min`, `max`, `sqrt`), subcircuit parameters with `PARAMS:`,
+the C-style `?:` in one parameter expression and the diode `KF`/`AF` flicker-noise parameters.
+Two details keep them portable:
+
+- Model-internal resistors are self-controlled `G` elements, the one noiseless resistor
+  every SPICE accepts. (ngspice's `noisy=0` and LTspice's `noiseless` are each rejected by
+  the other simulator.) Nodes that see only such `G` elements and capacitors also get a
+  1e15 Ω resistor to ground, so that the floating-node checks of LTspice and PSpice pass.
+- The white voltage noise reaches the error summer through an `E` source (`Ewn`): LTspice
+  ignores the noise of a resistor whose node is read only inside a B-source expression.
+
+The noise levels are calibrated at 27 °C; at other temperatures they scale like kT.
 
 ## Acknowledgements
 

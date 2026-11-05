@@ -135,7 +135,8 @@ Vs_CMR s_CMR 0 DC 0 AC 1
   meas ac cmr_ph   find rcmph when rcmdb=0
   meas ac cp_lf    find tcpdb at=1k
   meas ac cp_max   max tcpdb
-  let kdb = db(k_dc)
+  * k_dc is ideally zero (symmetric model); the 1e-30 floor keeps db() defined
+  let kdb = db(abs(k_dc)+1e-30)
   meas ac kdc_1m   find kdb at=1Meg
   let errdm = abs(t_dm/r_dm-1)
   let errcm = abs(t_cm/r_cm-1)

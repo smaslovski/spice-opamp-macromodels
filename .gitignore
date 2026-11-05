@@ -5,3 +5,4 @@ tests/*.dat
 tests/*.log
 *.raw
 __pycache__/
+tests/xsim_out/

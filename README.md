@@ -53,7 +53,7 @@ overload and saturation behaviour.
 
 ### Design choices worth knowing
 - `VOS`, the input voltage noise and the CMRR/PSRR error terms form **one error voltage in series with the + input**, ahead of `RID`. No spurious `(VOS + en)/RID` current flows in the source resistance.
-- `RIC || CIC` is the common-mode input impedance of each input pin to ground, i.e. per-pin datasheet values ("input impedance, each input: 34 MΩ ∥ 4 pF" → `RIC=34Meg CIC=4p`). If a datasheet quotes the value with both inputs tied together (the JEDEC definition of z_ic), use `RIC = 2·R` and `CIC = C/2`.
+- `RIC || CIC` is the common-mode input impedance of each input pin to ground. The datasheet values can be used directly: “common-mode input impedance: 34 MΩ ∥ 4 pF” → `RIC=34Meg CIC=4p`. Only if a datasheet says the value was measured with both inputs tied together, use `RIC = 2·R` and `CIC = C/2`.
 - The CMRR error is `(Vcm - VCMN)/CMRR`, where `VCMN` (default: mid-supply) is the common-mode voltage at which `VOS` is specified. PSRR is referred to the nominal supplies `VCCN`, `VEEN`.
 - In the class-AB crossover (|Iout| below about `VXO/ROUT`) the small-signal output resistance is `2*ROUT`; it is `ROUT` once the output carries more than about `2*VXO/ROUT`. Set `VXO=0` for a constant `ROUT`.
 - Noise levels are exact at 27 °C and scale with kT at other temperatures.

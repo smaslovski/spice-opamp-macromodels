@@ -18,7 +18,7 @@ derived, and which stay at their defaults.
 
 ## Version and updates
 
-- Skill revision: **1.11** (2026-11-06)
+- Skill revision: **1.12** (2026-11-06)
 - For model version: **1.4** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
   in the header of `opamp_full.lib` / `fdopamp_full.lib`)
 - Repository: https://github.com/smaslovski/spice-opamp-macromodels
@@ -148,8 +148,8 @@ GBW = fu / (that factor).
 | `VOS` | V | input offset voltage, in series with + input | 1m / 1m | "Input offset voltage" (typ). Sign is arbitrary; keep it positive unless told otherwise. |
 | `IB` | A | input bias current, average of both pins; > 0 flows **into** the pins | 80n / 2u | "Input bias current". npn bipolar: positive. pnp bipolar: **negative** (current flows out). JFET/CMOS: the tiny leakage (pA); sign as the datasheet states (an explicitly signed table value or plot axis), else from the input device: p-channel JFET positive (gate leakage flows into the pins), n-channel JFET negative, CMOS positive. Input type unknown: use the datasheet magnitude as positive and say so; never keep the default. |
 | `IOS` | A | I(inp) − I(inn) | 20n / 0.1u | "Input offset current". |
-| `RID`, `CID` | Ω, F | differential input resistance / capacitance (between the inputs) | 2Meg, 1.4p / 1Meg, 1p | "Differential input resistance/capacitance" (r_id, C_id, Z_id). A bare "input resistance r_i" / "input capacitance C_i" in a bipolar datasheet is the differential value. CMOS/JFET: use 1T if only "10^12 Ω" or "very high" is given. |
-| `RIC`, `CIC` | Ω, F | common-mode input resistance / capacitance **of each pin to ground** | 400Meg, 0.75p / 200Meg, 1p | Per-pin value ("each input") → use directly. Value explicitly for both inputs tied together (JEDEC z_ic) → RIC = 2·R, CIC = C/2. If the datasheet does not say which, use the value directly and say so (the difference is a factor of 2). Never derive them from the differential RID/CID: if no common-mode value is given, keep the defaults. |
+| `RID`, `CID` | Ω, F | differential input resistance / capacitance (between the inputs) | 2Meg, 1.4p / 1Meg, 1p | "Differential input resistance/capacitance" (r_id, C_id, Z_id). A bare "input resistance r_i" / "input capacitance C_i" is measured between the inputs with one input grounded, so it equals RID ∥ RIC and CID + CIC (per pin); in a bipolar datasheet RIC ≫ RID, so r_i is the differential value. If C_i and a common-mode C_ic are both given, CID = C_i − CIC. CMOS/JFET: use 1T if only "10^12 Ω" or "very high" is given. |
+| `RIC`, `CIC` | Ω, F | common-mode input resistance / capacitance **of each pin to ground** | 400Meg, 0.75p / 200Meg, 1p | "Common-mode input impedance" r_ic ∥ C_ic → use directly. Only if the datasheet explicitly says the value is for both inputs tied together → RIC = 2·R, CIC = C/2. Never derive them from the differential RID/CID: if no common-mode value is given, keep the defaults. |
 | `VCLMP`, `RCLMP` | V, Ω | two anti-parallel diodes between the inputs (forward voltage at 1 mA) and their series resistance; VCLMP = 100 means no clamp | 100, 100 | Only if the datasheet shows back-to-back input protection diodes between the inputs (schematic, or "differential input voltage limited to ±0.7 V"): VCLMP ≈ 0.7. RCLMP = the total internal series resistance if given, else 100. |
 
 ### Common-mode and supply rejection

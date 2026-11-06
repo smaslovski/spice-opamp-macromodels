@@ -22,6 +22,7 @@ overload and saturation behaviour.
 | `models/pspice/` | the same two libraries for PSpice, generated from the ones above by `tools/make_pspice_port.py` |
 | `tests/` | characterization decks that measure every specified quantity and print it, and `cross_sim.py`, which compares ngspice, LTspice and PSpice |
 | `examples/` | eight example netlists and `run_examples.py`, which runs them and draws the figures |
+| `skills/datasheet-to-params/SKILL.md` | instructions for an AI assistant (any vendor) to extract the model parameters from an op-amp or FDA datasheet, with a source and confidence for each value |
 | `docs/examples_slides.pdf` | slides with the examples: stability, noise, nonlinear effects |
 | `docs/figures/` | figures produced by `run_examples.py` |
 

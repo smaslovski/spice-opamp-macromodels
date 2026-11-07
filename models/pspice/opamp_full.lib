@@ -24,7 +24,8 @@
 * LINEAR EFFECTS
 *   - finite DC gain A0, dominant pole, GBW, two extra poles (FP2, FP3)
 *   - differential / common-mode input R and C (noiseless)
-*   - CMRR and PSRR(+/-) with frequency roll-off (a zero in the coupling gain)
+*   - CMRR and PSRR(+/-) with frequency roll-off (a zero in the coupling gain;
+*     optional separate PSRR+/PSRR- corners FPSRRP, FPSRRN)
 *   - output resistance (ROUT) and output capacitance
 *   - input voltage noise (white + 1/f) and input current noise (white + 1/f,
 *     FCIN = current-noise 1/f corner, independent on each input; 0 = off)
@@ -120,6 +121,8 @@
 *   PSRRP   ratio  31.6k    DC rejection of the positive supply
 *   PSRRN   ratio  31.6k    DC rejection of the negative supply
 *   FPSRR   Hz     100      PSRR falls at 20 dB/dec above this frequency
+*   FPSRRP  Hz     0        PSRR+ corner (positive supply); 0 = FPSRR
+*   FPSRRN  Hz     0        PSRR- corner (negative supply); 0 = FPSRR
 *   VCCN    V      15       nominal positive supply (PSRR reference)
 *   VEEN    V      -15      nominal negative supply (PSRR reference)
 *   VCMN    V      mid      input CM voltage at which VOS is specified; the
@@ -170,7 +173,7 @@ Ed out na VALUE={(K*TAUZ/CD)*I(Vs)}
 + A0=200k GBW=1Meg SR=0.5Meg SRR=0 SRF=0 FP2=3Meg FP3=10Meg
 + VOS=1m IB=80n IOS=20n
 + RID=2Meg CID=1.4p RIC=400Meg CIC=0.75p
-+ CMRR=31.6k FCMRR=200 PSRRP=31.6k PSRRN=31.6k FPSRR=100 VCCN=15 VEEN=-15
++ CMRR=31.6k FCMRR=200 PSRRP=31.6k PSRRN=31.6k FPSRR=100 FPSRRP=0 FPSRRN=0 VCCN=15 VEEN=-15
 + VCMN=1e30
 + ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
 + ICCQ=1.7m VHD=2 VLD=2 ICMHI=2 ICMLO=2 VK=0.15
@@ -264,9 +267,11 @@ Gfn 0 inn VALUE={(GFI)*V(nfn1,nfn2)}
 Ecm ncm0 0 VALUE={0.5*(V(inp)+V(inn))-VCMX}
 Xcm  ncm0 ncm ZCPL PARAMS: K={1/CMRR} FZ={FCMRR}
 Eps1 nps1i 0 VALUE={V(vcc)-VCCN}
-Xps1 nps1i nps1 ZCPL PARAMS: K={1/PSRRP} FZ={FPSRR}
+.param FPSPV={IF(FPSRRP>0, FPSRRP, FPSRR)}
+.param FPSNV={IF(FPSRRN>0, FPSRRN, FPSRR)}
+Xps1 nps1i nps1 ZCPL PARAMS: K={1/PSRRP} FZ={FPSPV}
 Eps2 nps2i 0 VALUE={V(vee)-VEEN}
-Xps2 nps2i nps2 ZCPL PARAMS: K={1/PSRRN} FZ={FPSRR}
+Xps2 nps2i nps2 ZCPL PARAMS: K={1/PSRRN} FZ={FPSNV}
 
 * ---- effective differential input voltage ------------------------------------
 * = V(inp) - V(inn) + series error voltage (VOS + CMRR/PSRR terms + noise)

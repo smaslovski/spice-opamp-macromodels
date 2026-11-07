@@ -18,7 +18,7 @@ derived, and which stay at their defaults.
 
 ## Version and updates
 
-- Skill revision: **1.12** (2026-11-06)
+- Skill revision: **1.13** (2026-11-06)
 - For model version: **1.4** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
   in the header of `opamp_full.lib` / `fdopamp_full.lib`)
 - Repository: https://github.com/smaslovski/spice-opamp-macromodels
@@ -160,6 +160,7 @@ GBW = fu / (that factor).
 | `FCMRR` | Hz | CMRR falls at 20 dB/decade above this | 200 / 100k | From the CMRR vs frequency plot. Most robust: take one point (f_x, CMRR_x in dB) on the sloped part, one or two decades above the bend (curves often steepen further up, where other poles act), and compute FCMRR = f_x · 10^((CMRR_x − CMRR_DC)/20), where CMRR_DC is the value you set for `CMRR` (then the model's asymptote passes through the plotted point). Read a second point one decade away and check that the two differ by about 20 dB; if not, you are on the wrong curve or misreading the axis. If the check still fails after re-reading, do not choose a value between your estimates: use the point nearest the bend, mark it low confidence, and give the other estimate in the notes. If the plot's low-frequency level differs from the table value, say so. Cross-check with the frequency where the curve is 3 dB below its DC value. |
 | `PSRRP`, `PSRRN` | ratio | DC rejection of the positive / negative supply | 31.6k / 10k | "Supply voltage rejection ratio" (k_SVR, PSRR). If only one value (both supplies varied together) is given, use it for both. |
 | `FPSRR` | Hz | PSRR falls at 20 dB/decade above this | 100 / 100k | From the PSRR vs frequency plot, with the same formula as FCMRR, on the lower (worse) of the two supply curves. |
+| `FPSRRP`, `FPSRRN` | Hz | separate corners of PSRR+ and PSRR−; 0 = `FPSRR` | 0, 0 / 0, 0 | If the plot shows separate +PSRR and −PSRR curves whose corners (same formula, each with its own DC value) differ by more than a factor of 2, set each from its own curve and keep `FPSRR` from the worse one. Only if the user's library lists `FPSRRP`/`FPSRRN` in its header (older libraries reject them); otherwise use `FPSRR` alone and give the other corner in the notes. |
 | `VCCN`, `VEEN` | V | nominal supplies the PSRR is referred to | 15, −15 / 5, −5 | The supply of your chosen operating condition. Single supply: VEEN = 0. |
 | `VCMN` | V | input CM voltage at which VOS is specified | mid-supply | Only if the test condition says so (e.g. "V_CM = 0 V" on a single supply, or "V_CM = V_S/2"). Otherwise omit (= mid-supply). |
 

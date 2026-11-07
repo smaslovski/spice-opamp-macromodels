@@ -83,6 +83,18 @@ Rl12 o12 0 2k
 X13  p2 o13 vcc vee o13 OPAMP_FULL PARAMS: SRR=0.5Meg SRF=1Meg
 Rl13 o13 0 2k
 
+* --- 14. Separate PSRR corners: FPSRRP = 10 Hz, FPSRRN = 1 kHz (FPSRR = 100) ------
+*         expected at 10 kHz: PSRR+ = 90 - 10*log10(1+1e6) = 30.0 dB,
+*         PSRR- = 90 - 10*log10(1+100) = 69.96 dB (default PSRR at 10 kHz: 50.0 dB)
+Vcc14 vcc14 0 15 AC 1
+X14   0 n14 vcc14 vee o14 OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k
+Lfb14 o14 n14 1e9
+Cg14  n14 0 1e9
+Vee15 vee15 0 -15 AC 1
+X15   0 n15 vcc vee15 o15 OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k
+Lfb15 o15 n15 1e9
+Cg15  n15 0 1e9
+
 .control
   op
   echo "--- DC operating point ---"
@@ -107,6 +119,12 @@ Rl13 o13 0 2k
   meas ac cmrr_1k find cmrr at=1k
   meas ac psrrp_dc find psrrp at=0.1
   meas ac psrrn_dc find psrrn at=0.1
+  * test 14: separate PSRR corners (theory: 30.0, 69.96 and 50.0 dB at 10 kHz)
+  let psrrp14 = vdb(o1)-vdb(o14)
+  let psrrn14 = vdb(o1)-vdb(o15)
+  meas ac psrrp14_10k find psrrp14 at=10k
+  meas ac psrrn14_10k find psrrn14 at=10k
+  meas ac psrrp_10k find psrrp at=10k
   * Open-loop gain and phase
   plot ad title 'Open-loop gain (dB)' xlog
   plot phd title 'Open-loop phase (deg)' xlog

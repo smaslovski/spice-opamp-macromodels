@@ -100,6 +100,8 @@
 *   PSRRP   ratio  10k      DC rejection of the positive supply
 *   PSRRN   ratio  10k      DC rejection of the negative supply
 *   FPSRR   Hz     100k     PSRR falls at 20 dB/dec above this frequency
+*   FPSRRP  Hz     0        PSRR+ corner (positive supply); 0 = FPSRR
+*   FPSRRN  Hz     0        PSRR- corner (negative supply); 0 = FPSRR
 *   VCCN    V      5        nominal positive supply (PSRR reference)
 *   VEEN    V      -5       nominal negative supply (PSRR reference)
 *   VCMN    V      mid      input CM voltage at which VOS is specified; the
@@ -156,7 +158,7 @@ Ed out na VALUE={(K*TAUZ/CD)*I(Vs)}
 + A0=100k GBW=100Meg SR=200Meg FP2=300Meg FP3=1G
 + VOS=1m IB=2u IOS=0.1u
 + RID=1Meg CID=1p RIC=200Meg CIC=1p
-+ CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
++ CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k FPSRRP=0 FPSRRN=0 VCCN=5 VEEN=-5
 + VCMN=1e30
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
@@ -237,9 +239,11 @@ Gfn 0 inn VALUE={(GFI)*V(nfn1,nfn2)}
 Ecm ncm0 0 VALUE={0.5*(V(inp)+V(inn))-VCMX}
 Xcm  ncm0 ncm FDZCPL PARAMS: K={1/CMRR} FZ={FCMRR}
 Eps1 nps1i 0 VALUE={V(vcc)-VCCN}
-Xps1 nps1i nps1 FDZCPL PARAMS: K={1/PSRRP} FZ={FPSRR}
+.param FPSPV={IF(FPSRRP>0, FPSRRP, FPSRR)}
+.param FPSNV={IF(FPSRRN>0, FPSRRN, FPSRR)}
+Xps1 nps1i nps1 FDZCPL PARAMS: K={1/PSRRP} FZ={FPSPV}
 Eps2 nps2i 0 VALUE={V(vee)-VEEN}
-Xps2 nps2i nps2 FDZCPL PARAMS: K={1/PSRRN} FZ={FPSRR}
+Xps2 nps2i nps2 FDZCPL PARAMS: K={1/PSRRN} FZ={FPSNV}
 
 Evd vd 0 VALUE={V(inp)-V(inn)+VOS+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)}
 Ewin nwin 0 VALUE={max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-ICMLO)/VK))*(1+tanh((V(vcc)-ICMHI
@@ -341,7 +345,7 @@ Glkn outn 0 outn 0 1e-8
 + A0=100k GBW=100Meg SR=200Meg FP2=300Meg FP3=1G
 + VOS=1m IB=2u IOS=0.1u
 + RID=1Meg CID=1p RIC=200Meg CIC=1p
-+ CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k VCCN=5 VEEN=-5
++ CMRR=31.6k FCMRR=100k PSRRP=10k PSRRN=10k FPSRR=100k FPSRRP=0 FPSRRN=0 VCCN=5 VEEN=-5
 + VCMN=1e30
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
@@ -353,7 +357,7 @@ Xc inp inn vcc vee outp outn vocm ncm ncm FDOPAMP_CORE PARAMS:
 + A0={A0} GBW={GBW} SR={SR} FP2={FP2} FP3={FP3}
 + VOS={VOS} IB={IB} IOS={IOS}
 + RID={RID} CID={CID} RIC={RIC} CIC={CIC}
-+ CMRR={CMRR} FCMRR={FCMRR} PSRRP={PSRRP} PSRRN={PSRRN} FPSRR={FPSRR} VCCN={VCCN} VEEN={VEEN}
++ CMRR={CMRR} FCMRR={FCMRR} PSRRP={PSRRP} PSRRN={PSRRN} FPSRR={FPSRR} FPSRRP={FPSRRP} FPSRRN={FPSRRN} VCCN={VCCN} VEEN={VEEN}
 + VCMN={VCMN}
 + ENOISE={ENOISE} FCEN={FCEN} INOISE={INOISE} FCIN={FCIN}
 + ICCQ={ICCQ} VHD={VHD} VLD={VLD} ICMHI={ICMHI} ICMLO={ICMLO} VK={VK}

@@ -31,7 +31,7 @@ overload and saturation behaviour.
 **Linear**
 - finite DC gain `A0`, dominant pole set by `GBW`, two non-dominant poles `FP2`, `FP3`
 - differential and common-mode input resistance and capacitance (`RID`, `CID`, `RIC`, `CIC`)
-- CMRR and PSRR (positive and negative supply) with a 20 dB/decade roll-off above `FCMRR` / `FPSRR`
+- CMRR and PSRR (positive and negative supply) with a 20 dB/decade roll-off above `FCMRR` / `FPSRR` (optionally separate corners `FPSRRP`, `FPSRRN` for the two supplies)
 - output resistance `ROUT` and output capacitance `COUT`
 - FDA: an internal common-mode feedback loop with its own DC gain, unity-gain frequency, second pole and slew rate; the `vocm` pin sets the output common-mode voltage and floats to mid-supply when left open
 
@@ -139,6 +139,7 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 | `FCMRR` | Hz | frequency above which CMRR falls at 20 dB/decade | 200 | 100k |
 | `PSRRP`, `PSRRN` | ratio | DC rejection of the positive and of the negative supply | 31.6k, 31.6k | 10k, 10k |
 | `FPSRR` | Hz | frequency above which PSRR falls at 20 dB/decade | 100 | 100k |
+| `FPSRRP`, `FPSRRN` | Hz | separate PSRR+ / PSRR− corner frequencies; 0 = `FPSRR` | 0, 0 | 0, 0 |
 | `VCCN`, `VEEN` | V | nominal supply voltages; the PSRR error is referred to them | 15, −15 | 5, −5 |
 | `VCMN` | V | input common-mode voltage at which `VOS` is specified; the CMRR error is (Vcm − `VCMN`)/`CMRR` | mid-supply | mid-supply |
 
@@ -231,6 +232,7 @@ ngspice-42 and the default parameters:
 | tail capacitance `KJUMP` = 0.25: follower jump / falling 10–90 % time ratio | 2.39 V (theory 2.41 V) / 1.000 (1) | | |
 | `KJUMP` = −0.25: jump on the falling edge / rising time ratio | −2.39 V (theory −2.41 V) / 1.000 (1) | | |
 | `SRR` = 0.5Meg, `SRF` = 1Meg: rising time ratio / falling slew ratio | 1.000 (1) / 2.000 (2) | | |
+| `FPSRRP` = 10, `FPSRRN` = 1k: PSRR+ / PSRR− at 10 kHz | 30.0 dB / 69.95 dB (theory 30.0 / 69.96 dB) | `FPSRRP` = 10k, `FPSRRN` = 1Meg: PSRR+ / PSRR− at 1 MHz | 40.0 dB / 76.99 dB (theory 40.0 / 76.99 dB) |
 
 `tests/fd_middlebrook.cir` also checks the Middlebrook loop gains of the FDA against a
 conventional L/C loop break (CM: identical; DM: within 0.5 %, the residual being the loading

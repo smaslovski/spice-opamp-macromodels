@@ -81,6 +81,22 @@ Rf8b on8 np8 200k
 Vin8 sp8 0 DC 0 AC 1
 Vvo8 vo8 0 DC 0
 
+* --- 9. Separate PSRR corners: FPSRRP = 10k, FPSRRN = 1Meg (FPSRR = 100k) ---------
+*        expected at 1 MHz: PSRR+ = 80 - 10*log10(1+1e4) = 40.0 dB,
+*        PSRR- = 80 - 10*log10(2) = 76.99 dB
+Vcc9 vcc9 0 5 AC 1
+X9   np9 nn9 vcc9 vee op9 on9 vo9 FDOPAMP_FULL PARAMS: FPSRRP=10k FPSRRN=1Meg
+Lf9a op9 nn9 1e9
+Lf9b on9 np9 1e9
+Cg9a np9 0 1e9
+Cg9b nn9 0 1e9
+Vee10 vee10 0 -5 AC 1
+X10  np10 nn10 vcc vee10 op10 on10 vo10 FDOPAMP_FULL PARAMS: FPSRRP=10k FPSRRN=1Meg
+Lf10a op10 nn10 1e9
+Lf10b on10 np10 1e9
+Cg10a np10 0 1e9
+Cg10b nn10 0 1e9
+
 .control
   set noaskquit
   op
@@ -107,6 +123,11 @@ Vvo8 vo8 0 DC 0
   meas ac cmrr_lf  find cmrrdb at=1k
   meas ac cmrr_1m  find cmrrdb at=1Meg
   meas ac psrr_lf  find psrrp at=1k
+  * test 9: separate PSRR corners (theory: 40.0 and 76.99 dB at 1 MHz)
+  let psrrp9 = vdb(op1,on1)-vdb(op9,on9)
+  let psrrn9 = vdb(op1,on1)-vdb(op10,on10)
+  meas ac psrrp9_1m find psrrp9 at=1Meg
+  meas ac psrrn9_1m find psrrn9 at=1Meg
   meas ac acl_lf   find acl at=1k
   let aclrel = acl-acl[0]
   meas ac f3db_cl  when aclrel=-3

@@ -47,6 +47,12 @@ CASES = {
                 ('g1m', 'ac', 'V(out)@1Meg', 1e-3)]),
     'ac_psrr': ('opamp_full.lib', "Vcc vcc 0 DC 15 AC 1\nVee vee 0 -15\nX1 0 out vcc vee out OPAMP_FULL\n",
                 ".ac dec 20 10 10Meg", [('ps1k', 'ac', 'V(out)@1k', 1e-3), ('ps100k', 'ac', 'V(out)@100k', 1e-3)]),
+    'ac_psrrp2': ('opamp_full.lib', "Vcc vcc 0 DC 15 AC 1\nVee vee 0 -15\n"
+                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k\n",
+                  ".ac dec 20 10 10Meg", [('psp10k', 'ac', 'V(out)@10k', 1e-3)]),
+    'ac_psrrn2': ('opamp_full.lib', "Vcc vcc 0 15\nVee vee 0 DC -15 AC 1\n"
+                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k\n",
+                  ".ac dec 20 10 10Meg", [('psn10k', 'ac', 'V(out)@10k', 1e-3)]),
     'tran_slew': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(-5 5 1u 1n 1n 50u 100u)\n"
                   "X1 in out vcc vee out OPAMP_FULL\n", ".tran 10n 40u",
                   [('t90', 'tran', 'V(out)=4', 1e-3), ('vend', 'tran', 'V(out)@30u', 1e-4)]),

@@ -97,6 +97,24 @@ Lf10b on10 np10 1e9
 Cg10a np10 0 1e9
 Cg10b nn10 0 1e9
 
+* --- 10. Output balance error: gain-4 stage as test 4 with KBAL = 1m ---------------
+*         expected: output CM change / differential output change = KBAL
+X11  np11 nn11 vcc vee op11 on11 vo11 FDOPAMP_FULL PARAMS: KBAL=1m
+Rg11a sp11 np11 500
+Rg11b sn11 nn11 500
+Rf11a op11 nn11 2k
+Rf11b on11 np11 2k
+Rl11  op11 on11 1k
+Vin11 sp11 0 DC 0.25
+Es11  sn11 0 sp11 0 -1
+Vvo11 vo11 0 0
+X12  np12 nn12 vcc vee op12 on12 vo11 FDOPAMP_FULL PARAMS: KBAL=1m
+Rg12a 0 np12 500
+Rg12b 0 nn12 500
+Rf12a op12 nn12 2k
+Rf12b on12 np12 2k
+Rl12  op12 on12 1k
+
 .control
   set noaskquit
   op
@@ -106,6 +124,9 @@ Cg10b nn10 0 1e9
   print vodm4 vocm4 v(vo4)
   * expected: vodm4 = VOS*(1+Rf/Rg) - IOS*Rf = 5m - 0.2m, vocm4 ~ VOSCM = 1m
   print v(vo1) -i(vcc)
+  * test 10: output balance (expected KBAL = 1m)
+  let kbal10 = (0.5*(v(op11)+v(on11))-0.5*(v(op12)+v(on12)))/((v(op11)-v(on11))-(v(op12)-v(on12)))
+  print kbal10
 
   ac dec 20 1 10G
   let ad    = vdb(op1,on1)

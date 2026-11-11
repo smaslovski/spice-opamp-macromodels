@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.4 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.5 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee out
 *
@@ -20,6 +20,11 @@
 *   - input stage tanh() characteristic  -> slew rate and large-signal THD
 *   - optional separate rising / falling slew rates (SRR, SRF)
 *   - optional follower jump from the input-pair tail capacitance (KJUMP)
+*   - optional phase reversal through an input junction (PRHI, PRLO, VPRHI,
+*     VPRLO, IPR): one-sided, with the input current and the source-resistance
+*     dependence of real parts
+*   - optional rail-to-rail input crossover: offset and bias-current step
+*     (VCMT, VKT, DVOST, DIBT)
 *   - input common-mode range (gm collapses near the rails)
 *   - optional differential input clamp: anti-parallel diodes between inp
 *     and inn (VCLMP, RCLMP); no clamps to the rails
@@ -42,13 +47,15 @@
 *     generators are Rnv, Rnp, Rnn (white), Dfa (1/f voltage) and Dfp1, Dfn1
 *     (1/f current, FCIN > 0). Noise levels are
 *     exact at TEMP = 27 C and scale like kT elsewhere.
-*   - Portability (v1.3): tested in ngspice-42 and LTspice 26 (identical
-*     DC/AC/transient/noise results). White e_n is passed through the E
-*     source Ewn (LTspice ignores the noise of a resistor that is read only
-*     inside a B-source expression). Nodes that otherwise see only G
-*     elements and capacitors get a 1e15 ohm DC path to ground (R*lk), which
-*     satisfies the floating-node checks of LTspice/PSpice; their effect on
-*     gain and noise is negligible. PSpice/HSPICE need a port (no B sources).
+*   - Portability: tested in ngspice-42 and LTspice 26, and the PSpice port
+*     in PSpice 9.1 (tests/cross_sim.py; DC/AC/transient/noise agree). White
+*     e_n is passed through the E source Ewn (LTspice ignores the noise of a
+*     resistor that is read only inside a B-source expression). Nodes that
+*     otherwise see only G elements and capacitors get a 1e15 ohm DC path to
+*     ground (R*lk), which satisfies the floating-node checks of LTspice and
+*     PSpice; their effect on gain and noise is negligible.
+*     PSpice uses the generated port (B sources rewritten as E/G VALUE
+*     sources); HSPICE is not supported.
 *   - Bias currents: IB > 0 flows INTO the pins (NPN input); use IB < 0 for PNP.
 *   - RIC || CIC is the common-mode input impedance of EACH input pin to
 *     ground (per-pin datasheet values, e.g. "34 Mohm, 4 pF each input").
@@ -69,8 +76,9 @@
 *   A0      V/V    200k     open-loop DC gain
 *   GBW     Hz     1Meg     gain-bandwidth product (unity-gain frequency of the
 *                           dominant-pole response)
-*   FP2     Hz     3Meg     second pole
-*   FP3     Hz     10Meg    third pole
+*   FP2     Hz     0        second pole; 0 = 3*GBW (3Meg at the default
+*                           GBW)
+*   FP3     Hz     0        third pole; 0 = 10*GBW (10Meg)
 *   SR      V/s    0.5Meg   slew rate (0.5Meg = 0.5 V/us)
 *   SRR     V/s    0        slew rate of the rising (positive-going) output;
 *                           0 = SR
@@ -89,7 +97,8 @@
 *   IB      A      80n      input bias current (average of the two pins);
 *                           IB > 0 flows into the pins (NPN), IB < 0 out (PNP)
 *   IOS     A      20n      input offset current, I(inp) - I(inn)
-*   RID     ohm    2Meg     differential input resistance (noiseless)
+*   RID     ohm    2Meg     differential input resistance (noiseless); its
+*                           current saturates at |IB|, as in a bipolar pair
 *   CID     F      1.4p     differential input capacitance
 *   RIC     ohm    400Meg   common-mode input resistance of each input pin to
 *                           ground (noiseless)
@@ -103,10 +112,16 @@
 *   RCLMP   ohm    100      series resistance of each clamp diode
 *  Common-mode and supply rejection
 *   CMRR    ratio  31.6k    DC CMRR (31.6k = 90 dB)
-*   FCMRR   Hz     200      CMRR falls at 20 dB/dec above this frequency
+*   FCMRR   Hz     0        CMRR falls at 20 dB/dec above this frequency;
+*                           0 = 6.32*GBW/CMRR, so that the CMRR is 16 dB
+*                           at GBW (200 at the defaults)
+*                           Keep CMRR*FCMRR/GBW >= 3 (10 dB at GBW): the
+*                           CMRR error is in series with the input, and
+*                           below that a follower's step response rings
 *   PSRRP   ratio  31.6k    DC rejection of the positive supply
 *   PSRRN   ratio  31.6k    DC rejection of the negative supply
-*   FPSRR   Hz     100      PSRR falls at 20 dB/dec above this frequency
+*   FPSRR   Hz     0        PSRR falls at 20 dB/dec above this frequency;
+*                           0 = 1e-4*GBW (100 at the default GBW)
 *   FPSRRP  Hz     0        PSRR+ corner (positive supply); 0 = FPSRR
 *   FPSRRN  Hz     0        PSRR- corner (negative supply); 0 = FPSRR
 *   VCCN    V      15       nominal positive supply (PSRR reference)
@@ -125,6 +140,26 @@
 *                           input-stage gm has fallen to half (< 0: beyond rail)
 *   ICMLO   V      2        the same, above vee
 *   VK      V      0.15     width of the gm roll-off at the input-range edges
+*   PRHI    -      0        phase reversal at the top: a junction of the input
+*                           pair (npn base-collector) conducts near vcc; its
+*                           current reverses the output, which runs to the
+*                           wrong rail at about PRHI*SR; 0 = no junction.
+*                           Typical 1..4
+*   PRLO    -      0        the same at the bottom (p-JFET gate-drain)
+*   VPRHI   V      0        position of the top junction: input voltage below
+*                           vcc where the output flips (< 0: above vcc)
+*   VPRLO   V      0        the same above vee
+*   IPR     A      0        input current of a conducting junction (into the
+*                           pin at the top, out of it at the bottom); about the
+*                           tail current of the input pair. 0 = SR*30pF.
+*                           A source resistance RS prevents the reversal while
+*                           0.9*RS*IPR is larger than the overdrive
+*   VCMT    V      1        rail-to-rail input crossover: position of the
+*                           transition between the input pairs, below vcc
+*   VKT     V      0.1      width of the crossover transition
+*   DVOST   V      0        offset change across the transition (VOS applies
+*                           below it); 0 = none
+*   DIBT    A      0        bias-current change across the transition, each pin
 *   VHD     V      2        minimum headroom, output to vcc (swing limit)
 *   VLD     V      2        minimum headroom, output to vee (swing limit)
 *  Output stage
@@ -156,15 +191,16 @@ Hd  out na Vs {K*TAUZ/CD}
 *------------------------------------------------------------------------------
 .subckt OPAMP_FULL inp inn vcc vee out
 + PARAMS:
-+ A0=200k GBW=1Meg SR=0.5Meg SRR=0 SRF=0 FP2=3Meg FP3=10Meg
++ A0=200k GBW=1Meg SR=0.5Meg SRR=0 SRF=0 FP2=0 FP3=0
 + VOS=1m IB=80n IOS=20n
 + RID=2Meg CID=1.4p RIC=400Meg CIC=0.75p
-+ CMRR=31.6k FCMRR=200 PSRRP=31.6k PSRRN=31.6k FPSRR=100 FPSRRP=0 FPSRRN=0 VCCN=15 VEEN=-15
++ CMRR=31.6k FCMRR=0 PSRRP=31.6k PSRRN=31.6k FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=15 VEEN=-15
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
 + ICCQ=1.7m VHD=2 VLD=2 ICMHI=2 ICMLO=2 VK=0.15
 + ROUT=75 ISRC=25m ISNK=25m VXO=2m COUT=3p
 + VCLMP=100 RCLMP=100 KJUMP=0
++ PRHI=0 PRLO=0 VPRHI=0 VPRLO=0 IPR=0 VCMT=1 VKT=0.1 DVOST=0 DIBT=0
 
 * ---- derived constants -------------------------------------------------------
 .param PI2=6.283185307
@@ -198,8 +234,13 @@ Hd  out na Vs {K*TAUZ/CD}
 
 * ---- input network (noiseless) -------------------------------------------------
 * RID carries V(vd)/RID, i.e. it sits behind the series error voltage
-* (VOS, noise, CMRR/PSRR), as if that voltage were in series with the + pin
-Gid  inp inn vd 0 {1/RID}
+* (VOS, noise, CMRR/PSRR), as if that voltage were in series with the + pin.
+* The current through RID saturates at |IB| (IB = 0: no limit), as the base
+* currents of a bipolar pair do once one transistor takes the whole tail
+* current; small-signal it is V(vd)/RID.
+.param IDL={abs(IB)>0 ? abs(IB) : 1}
+.param KID={1/(RID*IDL)}
+Bid  inp inn I = {IDL}*tanh(V(vd)*{KID})
 Cid  inp inn {CID}
 Gic1 inp 0 inp 0 {1/RIC}
 Gic2 inn 0 inn 0 {1/RIC}
@@ -208,6 +249,8 @@ Cic2 inn 0 {CIC}
 * bias currents flow INTO the pins for IB > 0 (NPN input)
 Ibp  inp 0 DC {IB+IOS/2}
 Ibn  inn 0 DC {IB-IOS/2}
+Bibt1 inp 0 I = {DIBT}*0.5*(1+tanh((0.5*(V(inp)+V(inn))-V(vcc)+{VCMT})/{VKT}))
+Bibt2 inn 0 I = {DIBT}*0.5*(1+tanh((0.5*(V(inp)+V(inn))-V(vcc)+{VCMT})/{VKT}))
 * optional differential input clamp diodes: VCLMP = diode drop at 1 mA
 * (set via the emission coefficient), RCLMP = series resistance
 Dp1  inp inn DIN
@@ -247,10 +290,12 @@ Gfn  0 inn nfn1 nfn2 {GFI}
 
 * ---- CMRR and PSRR coupling into the input -----------------------------------
 Bcm  ncm0 0 V = 0.5*(V(inp)+V(inn))-{VCMN}
-Xcm  ncm0 ncm ZCPL PARAMS: K={1/CMRR} FZ={FCMRR}
+.param FCMV={FCMRR>0 ? FCMRR : 6.32*GBW/CMRR}
+Xcm  ncm0 ncm ZCPL PARAMS: K={1/CMRR} FZ={FCMV}
 Bps1 nps1i 0 V = V(vcc)-{VCCN}
-.param FPSPV={FPSRRP>0 ? FPSRRP : FPSRR}
-.param FPSNV={FPSRRN>0 ? FPSRRN : FPSRR}
+.param FPSV={FPSRR>0 ? FPSRR : 1e-4*GBW}
+.param FPSPV={FPSRRP>0 ? FPSRRP : FPSV}
+.param FPSNV={FPSRRN>0 ? FPSRRN : FPSV}
 Xps1 nps1i nps1 ZCPL PARAMS: K={1/PSRRP} FZ={FPSPV}
 Bps2 nps2i 0 V = V(vee)-{VEEN}
 Xps2 nps2i nps2 ZCPL PARAMS: K={1/PSRRN} FZ={FPSNV}
@@ -258,9 +303,54 @@ Xps2 nps2i nps2 ZCPL PARAMS: K={1/PSRRN} FZ={FPSNV}
 * ---- effective differential input voltage ------------------------------------
 * = V(inp) - V(inn) + series error voltage (VOS + CMRR/PSRR terms + noise)
 Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)
++ +{DVOST}*0.5*(1+tanh((0.5*(V(inp)+V(inn))-V(vcc)+{VCMT})/{VKT}))
 
 * ---- input common-mode range window (0..1, 0.5 at the ICMR edge) ---------------
-Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-{ICMLO})/{VK}))*(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn)))/{VK})),1e-3)
+* (times 1 - J for each conducting reversal junction, see below)
+* Each edge uses the input that keeps the stage working: the top edge the lower
+* input, the bottom edge the higher one (smooth min/max). A follower driven past
+* the range then stops at the edge, as a transistor-level stage does.
+Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))+0.5*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+1e-4)-V(vee)-{ICMLO})/{VK}))
++ *(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn))+0.5*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+1e-4))/{VK})),1e-6)
++ *(1-{EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI})*{KJ})))*(1-{EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI})*{KJ})))
++ *(1-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inp))*{KJ})))*(1-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inn))*{KJ})))
+
+* ---- phase reversal through an input junction (PRHI, PRLO) ---------------------
+* In a bipolar or JFET input pair a junction of the input device becomes forward
+* biased when an input goes far enough beyond the range: the base-collector
+* junction of an npn (at the top), the gate-drain junction of a p-JFET (at the
+* bottom). Its current flows from the input pin straight into the high-impedance
+* node of the first stage, in the direction opposite to the normal signal, and
+* the saturated device no longer works as an amplifier. J (0..1) is the
+* conduction of each junction (written out where it is used, in Bwin and Bpr,
+* so that it costs no nodes): a logistic step of thermal width centred VPRHI
+* below vcc (VPRLO above vee). At full conduction the input pin carries IPR
+* (into the pin at the top, out of it at the bottom), the stage gm is switched
+* off, and PRHI*IMAX (PRLO*IMAX) is injected into the gain node: the output runs
+* to the wrong rail at about PRHI*SR, faster than the slew rate for PRHI > 1.
+* The output flips at half conduction, where the input current is 0.9*IPR, so
+* a source resistance RS prevents the reversal while 0.9*RS*IPR exceeds the
+* overdrive. IPR is about the tail current of the input pair (0 = SR*30pF).
+.param EPH={PRHI>0 ? 1 : 0}
+.param EPL={PRLO>0 ? 1 : 0}
+.param KJ={0.5/VTN}            ; 1/(2*VT): logistic of thermal width
+* Input current: the same junction step, shifted by VT*ln(9) so that it is
+* 0.9*IPR where the output flips (J = 1/2) and IPR beyond.
+.param IPRV={IPR>0 ? IPR : IMAXV}
+.param DJ={VTN*log(9)}
+Bprp inp 0 I = {IPRV}*({EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI+DJ})*{KJ}))-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO+DJ}-V(inp))*{KJ})))
+Bprn inn 0 I = {IPRV}*({EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI+DJ})*{KJ}))-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO+DJ}-V(inn))*{KJ})))
+* Injected current: IMAX*PR*J^(1+L), L = max(log2(PR),0). For PR >= 1 it
+* equals the collapsing stage current IMAX*(1-J) at J = 1/2 whatever PR is, so
+* the output flips at J = 1/2; at full conduction it is PR*IMAX.
+.param LPH={max(log(max(PRHI,1e-3))/log(2),0)}
+.param LPL={max(log(max(PRLO,1e-3))/log(2),0)}
+.param AH={IMAXV*PRHI}
+.param AL={IMAXV*PRLO}
+Bpr  0 n1 I = {AH}*(pwr({EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI})*{KJ})),{1+LPH})
++ -pwr({EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI})*{KJ})),{1+LPH}))
++ +{AL}*(pwr({EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inp))*{KJ})),{1+LPL})
++ -pwr({EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inn))*{KJ})),{1+LPL}))
 
 * ---- input-pair tail capacitance (KJUMP) ----------------------------------------
 * The tail (common) node of the input pair follows the higher (KJUMP > 0,
@@ -277,11 +367,13 @@ Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))-V(vee)-{ICMLO})/{VK}))*(1+
 .param TPL={KJUMP<0 ? -1 : 1}
 .param KTC={max(abs(KJUMP),1e-12)}
 Btl  ntl0 0 V = 0.5*(V(inp)+V(inn))+{0.5*TPL}*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+2.5e-3)
-* Ctl has a noiseless series resistance (time constant 1/(2*pi*FP3)): the
+* Ctl has a noiseless series resistance (time constant 1/(2*pi*FP3V)): the
 * sensed current is then a smooth state, not the step-to-step ringing that
 * trapezoidal integration gives in a capacitor driven by an ideal source
 * (the max() below would rectify that ringing).
-.param RTL={1/(PI2*FP3*KTC*C1V)}
+.param FP2V={FP2>0 ? FP2 : 3*GBW}
+.param FP3V={FP3>0 ? FP3 : 10*GBW}
+.param RTL={1/(PI2*FP3V*KTC*C1V)}
 Vtl  ntl0 ntl 0
 Gtl  ntl ntlc ntl ntlc {1/RTL}
 Ctl  ntlc 0 {KTC*C1V}
@@ -304,11 +396,11 @@ Bclp n1 0 I = {IMAXV/1e-3}*(max(V(n1)-V(nhi),0)+min(V(n1)-V(nlo),0))
 * ---- higher-order poles (noiseless 1k / C sections) --------------------------
 G2   0 n2 n1 0 1m
 G2r  n2 0 n2 0 1m
-C2   n2 0 {1/(PI2*FP2*1e3)}
+C2   n2 0 {1/(PI2*FP2V*1e3)}
 R2lk n2 0 1e15
 G3   0 n3 n2 0 1m
 G3r  n3 0 n3 0 1m
-C3   n3 0 {1/(PI2*FP3*1e3)}
+C3   n3 0 {1/(PI2*FP3V*1e3)}
 R3lk n3 0 1e15
 
 * ---- output stage ----------------------------------------------------------------
@@ -327,10 +419,11 @@ Cout out 0 {COUT}
 *
 * Generic CMOS rail-to-rail, 5 V single supply, 5 MHz, 5 V/us:
 *   A0=100k GBW=5Meg SR=5Meg FP2=15Meg FP3=50Meg VOS=2m IB=1p IOS=0.5p
-*   RID=1T CID=2p RIC=2T CIC=1.5p CMRR=10k FCMRR=1k PSRRP=10k PSRRN=10k
+*   RID=1T CID=2p RIC=2T CIC=1.5p CMRR=10k FCMRR=5k PSRRP=10k PSRRN=10k
 *   FPSRR=1k VCCN=5 VEEN=0 ENOISE=15n FCEN=1k INOISE=0.1f ICCQ=1m
 *   VHD=0.05 VLD=0.05 ICMHI=-0.1 ICMLO=-0.1 VK=0.05 ROUT=100 ISRC=40m
 *   ISNK=40m VXO=0 COUT=2p
 *   (RIC=2T / RID=1T are fine; the Gmin of the simulator dominates.)
-*   VCMN defaults to 2.5 V here (mid-supply).
+*   VCMN defaults to 2.5 V here (mid-supply). FCMRR = 5k leaves 20 dB of
+*   CMRR at GBW; FP2 and FP3 could be left at 0 (3*GBW, 10*GBW).
 *==============================================================================

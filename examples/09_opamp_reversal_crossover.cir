@@ -1,0 +1,50 @@
+* Example 9 - OPAMP_FULL: phase reversal and rail-to-rail input crossover
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Unique model features shown:
+*  a) phase reversal (PRLO, VPRLO, IPR): a follower on +/-15 V is driven by a
+*     slow +/-15 V triangle, beyond its +/-13 V input range. As in a p-JFET
+*     input op amp, a junction of the input pair conducts once the input is
+*     more than 1 V below the range (VPRLO = 1): the output then runs to the
+*     positive rail and the input sources IPR = 15 uA (SR*30pF). There is no
+*     reversal at the top. Through 100k the input cannot supply 0.9*IPR with
+*     the 1 V of overdrive available, so the output only stops at the swing limit.
+*  b) rail-to-rail input crossover (VCMT, VKT, DVOST): a CMOS follower on a
+*     single 5 V supply, whose input range extends 0.1 V beyond both rails.
+*     The input offset steps by DVOST = -0.6 mV where the input moves from the
+*     p-pair to the n-pair, 1.3 V below vcc (the 110 dB CMRR adds only a
+*     few uV across the range).
+.include ../models/opamp_full.lib
+Vcc vcc 0 15
+Vee vee 0 -15
+Vtri tri 0 PWL(0 0 0.5m 15 1.5m -15 2m 0)
+Vs  tri inr 0
+Xr  inr outr vcc vee outr OPAMP_FULL PARAMS: PRLO=1 VPRLO=1
+RLr outr 0 2k
+Rs  tri ins 100k
+Xs  ins outs vcc vee outs OPAMP_FULL PARAMS: PRLO=1 VPRLO=1
+RLs outs 0 2k
+
+V5   v5 0 5
+Vcm  cm 0 2.5
+Xc   cm oc v5 0 oc OPAMP_FULL PARAMS: VCCN=5 VEEN=0 A0=1Meg GBW=10Meg SR=10Meg
++ VOS=0.2m ICMHI=-0.1 ICMLO=-0.1 VK=0.05 VHD=0.02 VLD=0.02 ROUT=50 VXO=0
++ CMRR=3.16Meg IB=1p IOS=0.1p VCMT=1.3 VKT=0.1 DVOST=-0.6m
+RLc  oc 0 100k
+
+.control
+tran 1u 2m
+meas tran trev when v(outr)=0 rise=1
+meas tran vin_rev find v(tri) at=trev
+meas tran ipr min i(Vs)
+meas tran vmin_s min v(outs)
+echo "a) phase reversal: output crosses 0 V upwards at input $&vin_rev V (junction at -14 V; the output slews for ~25 us); input current $&ipr A; through 100k the output stays at $&vmin_s V"
+wrdata ex09_reversal.txt v(tri) v(outr) v(outs) i(Vs)
+dc Vcm 0.05 4.95 0.01
+let vos = v(oc)-v(cm)
+meas dc vos_lo find vos at=2.5
+meas dc vos_hi find vos at=4.5
+let dvos = vos_hi-vos_lo
+echo "b) crossover: offset 2.5 V: $&vos_lo V, 4.5 V: $&vos_hi V, difference $&dvos V"
+wrdata ex09_crossover.txt vos
+.endc
+.end

@@ -18,9 +18,19 @@ derived, and which stay at their defaults.
 
 ## Version and updates
 
-- Skill revision: **1.13** (2026-11-06)
-- For model version: **1.4** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
+- Skill revision: **1.15** (2026-11-11)
+- For model version: **1.5** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
   in the header of `opamp_full.lib` / `fdopamp_full.lib`)
+- Parameters new in model 1.5 (`FPSRRP`, `FPSRRN`, `PRHI`, `PRLO`, `VPRHI`,
+  `VPRLO`, `IPR`, `VCMT`, `VKT`, `DVOST`, `DIBT`, `KBAL`) are rejected by older
+  libraries. If the user has an older version, leave them out of the instance line
+  and give their values in the notes.
+- In model 1.5, `FP2`, `FP3`, `FCMRR` and `FPSRR` default to 0, which scales them
+  with `GBW`, and `FPCM2` defaults to 0 = 4·`GBWCM` (see their rows). Older
+  libraries have fixed defaults (3Meg, 10Meg, 200, 100 / 300Meg, 1G, 100k, 100k;
+  FPCM2 200Meg) that suit only the default GBW and GBWCM: for an older library,
+  write the scaled values explicitly whenever `GBW` or `GBWCM` differs from the
+  default.
 - Repository: https://github.com/smaslovski/spice-opamp-macromodels
 - Latest revision of this file:
   https://github.com/smaslovski/spice-opamp-macromodels/blob/master/skills/datasheet-to-params/SKILL.md
@@ -118,28 +128,36 @@ Defaults are `OPAMP_FULL` / `FDOPAMP_FULL`. "–" = not available in that model.
 |---|---|---|---|---|
 | `A0` | V/V | open-loop DC gain | 200k / 100k | "Large-signal voltage gain" / "open-loop gain" (A_OL, A_VD). V/mV × 1000; dB → ratio. |
 | `GBW` | Hz | gain-bandwidth product = unity-gain frequency of the dominant-pole response | 1Meg / 100Meg | "Gain-bandwidth product" or "unity-gain bandwidth". For a decompensated part use the GBW, not the unity-gain frequency. |
-| `FP2`, `FP3` | Hz | second and third poles | 3Meg, 10Meg / 300Meg, 1G | Keep the defaults unless the datasheet gives a phase margin or a phase-vs-frequency plot; then use the "Phase margin" table below (FP3 ≈ 3.3·FP2). |
+| `FP2`, `FP3` | Hz | second and third poles; 0 = 3·`GBW`, 10·`GBW` | 0, 0 / 0, 0 | Leave 0 unless the datasheet gives a phase margin or a phase-vs-frequency plot; then use the "Phase margin" table below (FP3 ≈ 3.3·FP2). With 0 the phase margin is about 70° whatever `GBW` is, as long as the output pole 1/(2π·`ROUT`·`COUT`) is above about 10·`GBW` (see sanity check 13). |
 | `SR` | V/s | slew rate. FDA: slew rate of the **differential** output (each output slews at SR/2) | 0.5Meg / 200Meg | "Slew rate". For an FDA check whether the datasheet gives it per output or differential; per output → `SR` = 2 × value. |
 | `SRR`, `SRF` | V/s | slew rate of the rising / falling output; 0 = `SR` | 0 / – | Only if the datasheet gives SR+ and SR− separately, or a large-signal pulse plot shows clearly different slopes (> 10 %). Leave 0 otherwise. |
 | `KJUMP` | – | in an unloaded voltage follower, output jump divided by a fast input step; sign = edge: > 0 jump on the rising edge (npn/nmos input pair), < 0 on the falling edge (pnp/pmos/p-JFET pair) | 0 / 0 | From a voltage-follower large-signal pulse plot: look at the start of each output edge. If the output first moves (near-)vertically together with the input and only then continues as a sloped line, that vertical part is the jump. Measure the jump from the level before the edge to the point where the sloped part begins. KJUMP = (jump/step) × (RL + ROUT)/RL, negative if the jump is on the falling edge. Leave 0 only if both edges start with a slope. |
 
 **Phase margin.** If the datasheet gives the open-loop phase margin (or a gain/phase
 plot), choose FP2 from this table, interpolating linearly between columns (FP3 = 3.33·FP2, open loop, differential drive);
-otherwise keep the defaults. Do not assume a phase margin.
+otherwise leave FP2 and FP3 at 0. Do not assume a phase margin. Above 80° the table
+ends: use the 80° column and say so.
 
 | PM | 45° | 50° | 55° | 60° | 65° | 70° | 75° | 80° |
 |---|---|---|---|---|---|---|---|---|
 | FP2 / GBW | 1.22 | 1.47 | 1.78 | 2.17 | 2.72 | 3.51 | 4.81 | 7.34 |
 | fu / GBW | 0.82 | 0.85 | 0.89 | 0.92 | 0.94 | 0.96 | 0.98 | 0.99 |
+| f₋₃dB(G=+1) / GBW | 1.42 | 1.49 | 1.55 | 1.58 | 1.56 | 1.48 | 1.35 | 1.22 |
 
 Cross-check a phase margin read from a plot (often ±10°) with a small-signal step
 response at G = +1 and light load, if the datasheet has one: overshoot 5 % ≈ 65°,
 10 % ≈ 59°, 20 % ≈ 48°, 30 % ≈ 39° (second-order approximation). If the two disagree,
-give both and use the one with less reading uncertainty.
+give both and use the one with less reading uncertainty. Use the step response only if
+its step is smaller than about `SR/(2π·GBW)`: a larger "small-signal" step is partly
+slew-limited (a sign of this is different overshoot on the two edges), and its
+overshoot says little about the phase margin.
 
 The measured unity-gain frequency fu is below GBW by the factor in the last row.
 If the datasheet quotes only fu (unity-gain frequency) and the PM, set
-GBW = fu / (that factor).
+GBW = fu / (that factor). If it gives no GBW but the −3 dB bandwidth of a unity-gain
+follower ("closed-loop bandwidth, A_V = +1"), set GBW = f₋₃dB / (the factor in the
+f₋₃dB row) for the phase margin you found (60° if none is known; say so); use this also
+as a cross-check of a GBW read from a plot.
 
 ### Input: DC errors and impedance
 
@@ -149,7 +167,7 @@ GBW = fu / (that factor).
 | `IB` | A | input bias current, average of both pins; > 0 flows **into** the pins | 80n / 2u | "Input bias current". npn bipolar: positive. pnp bipolar: **negative** (current flows out). JFET/CMOS: the tiny leakage (pA); sign as the datasheet states (an explicitly signed table value or plot axis), else from the input device: p-channel JFET positive (gate leakage flows into the pins), n-channel JFET negative, CMOS positive. Input type unknown: use the datasheet magnitude as positive and say so; never keep the default. |
 | `IOS` | A | I(inp) − I(inn) | 20n / 0.1u | "Input offset current". |
 | `RID`, `CID` | Ω, F | differential input resistance / capacitance (between the inputs) | 2Meg, 1.4p / 1Meg, 1p | "Differential input resistance/capacitance" (r_id, C_id, Z_id). A bare "input resistance r_i" / "input capacitance C_i" is measured between the inputs with one input grounded, so it equals RID ∥ RIC and CID + CIC (per pin); in a bipolar datasheet RIC ≫ RID, so r_i is the differential value. If C_i and a common-mode C_ic are both given, CID = C_i − CIC. CMOS/JFET: use 1T if only "10^12 Ω" or "very high" is given. |
-| `RIC`, `CIC` | Ω, F | common-mode input resistance / capacitance **of each pin to ground** | 400Meg, 0.75p / 200Meg, 1p | "Common-mode input impedance" r_ic ∥ C_ic → use directly. Only if the datasheet explicitly says the value is for both inputs tied together → RIC = 2·R, CIC = C/2. Never derive them from the differential RID/CID: if no common-mode value is given, keep the defaults. |
+| `RIC`, `CIC` | Ω, F | common-mode input resistance / capacitance **of each pin to ground** | 400Meg, 0.75p / 200Meg, 1p | "Common-mode input impedance" r_ic ∥ C_ic → use directly. Only if the datasheet explicitly says the value is for both inputs tied together → RIC = 2·R, CIC = C/2. Never derive them from the differential RID/CID. If no common-mode value is given but a plot of I_B vs V_CM is, take RIC from its slope: RIC ≈ ΔV_CM/ΔI_B for each pin over the linear part of the input range (if the two pins differ, average their slopes, i.e. their conductances), and say so; otherwise keep the defaults. Keep the CIC default. |
 | `VCLMP`, `RCLMP` | V, Ω | two anti-parallel diodes between the inputs (forward voltage at 1 mA) and their series resistance; VCLMP = 100 means no clamp | 100, 100 | Only if the datasheet shows back-to-back input protection diodes between the inputs (schematic, or "differential input voltage limited to ±0.7 V"): VCLMP ≈ 0.7. RCLMP = the total internal series resistance if given, else 100. |
 
 ### Common-mode and supply rejection
@@ -157,10 +175,10 @@ GBW = fu / (that factor).
 | Param | Unit | Meaning | Defaults | How to get it |
 |---|---|---|---|---|
 | `CMRR` | ratio | DC CMRR | 31.6k (90 dB) | "Common-mode rejection ratio" (dB → ratio; µV/V → ratio). |
-| `FCMRR` | Hz | CMRR falls at 20 dB/decade above this | 200 / 100k | From the CMRR vs frequency plot. Most robust: take one point (f_x, CMRR_x in dB) on the sloped part, one or two decades above the bend (curves often steepen further up, where other poles act), and compute FCMRR = f_x · 10^((CMRR_x − CMRR_DC)/20), where CMRR_DC is the value you set for `CMRR` (then the model's asymptote passes through the plotted point). Read a second point one decade away and check that the two differ by about 20 dB; if not, you are on the wrong curve or misreading the axis. If the check still fails after re-reading, do not choose a value between your estimates: use the point nearest the bend, mark it low confidence, and give the other estimate in the notes. If the plot's low-frequency level differs from the table value, say so. Cross-check with the frequency where the curve is 3 dB below its DC value. |
+| `FCMRR` | Hz | CMRR falls at 20 dB/decade above this; 0 = the corner that leaves 16 dB (`OPAMP_FULL`) / 30 dB (`FDOPAMP_FULL`) of CMRR at `GBW` | 0 / 0 | No CMRR plot: leave 0. Otherwise, from the CMRR vs frequency plot. Most robust: take one point (f_x, CMRR_x in dB) on the sloped part, one or two decades above the bend (curves often steepen further up, where other poles act), and compute FCMRR = f_x · 10^((CMRR_x − CMRR_DC)/20), where CMRR_DC is the value you set for `CMRR` (then the model's asymptote passes through the plotted point). Read a second point one decade away and check that the two differ by about 20 dB; if not, you are on the wrong curve or misreading the axis. If the check still fails after re-reading, do not choose a value between your estimates: use the point nearest the bend, mark it low confidence, and give the other estimate in the notes. If the plot's low-frequency level differs from the table value, say so. Cross-check with the frequency where the curve is 3 dB below its DC value. Then run sanity check 12 (CMRR left at `GBW`). |
 | `PSRRP`, `PSRRN` | ratio | DC rejection of the positive / negative supply | 31.6k / 10k | "Supply voltage rejection ratio" (k_SVR, PSRR). If only one value (both supplies varied together) is given, use it for both. |
-| `FPSRR` | Hz | PSRR falls at 20 dB/decade above this | 100 / 100k | From the PSRR vs frequency plot, with the same formula as FCMRR, on the lower (worse) of the two supply curves. |
-| `FPSRRP`, `FPSRRN` | Hz | separate corners of PSRR+ and PSRR−; 0 = `FPSRR` | 0, 0 / 0, 0 | If the plot shows separate +PSRR and −PSRR curves whose corners (same formula, each with its own DC value) differ by more than a factor of 2, set each from its own curve and keep `FPSRR` from the worse one. Only if the user's library lists `FPSRRP`/`FPSRRN` in its header (older libraries reject them); otherwise use `FPSRR` alone and give the other corner in the notes. |
+| `FPSRR` | Hz | PSRR falls at 20 dB/decade above this; 0 = 10⁻⁴·`GBW` / 10⁻³·`GBW` | 0 / 0 | No PSRR plot: leave 0. Otherwise from the PSRR vs frequency plot, with the same formula as FCMRR, on the lower (worse) of the two supply curves. |
+| `FPSRRP`, `FPSRRN` | Hz | separate corners of PSRR+ and PSRR−; 0 = `FPSRR` | 0, 0 / 0, 0 | If the plot shows separate +PSRR and −PSRR curves whose corners (same formula, each with its own DC value) differ by more than a factor of 2, set each from its own curve and keep `FPSRR` from the worse one. |
 | `VCCN`, `VEEN` | V | nominal supplies the PSRR is referred to | 15, −15 / 5, −5 | The supply of your chosen operating condition. Single supply: VEEN = 0. |
 | `VCMN` | V | input CM voltage at which VOS is specified | mid-supply | Only if the test condition says so (e.g. "V_CM = 0 V" on a single supply, or "V_CM = V_S/2"). Otherwise omit (= mid-supply). |
 
@@ -179,7 +197,13 @@ GBW = fu / (that factor).
 |---|---|---|---|---|
 | `ICCQ` | A | quiescent supply current, vcc → vee, **per amplifier** | 1.7m / 10m | "Supply current" (I_CC, I_Q) ÷ number of channels if the value is for the whole package. |
 | `ICMHI`, `ICMLO` | V | input CM range: distance below vcc / above vee where the input-stage gain has fallen to half; negative = beyond the rail | 2, 2 / 1.5, 1 | From "common-mode input voltage range" (V_ICR, V_CM): headroom = V_CC − V_CM,max (and V_CM,min − V_EE). Use the typical value if given, else the min. Set ICM ≈ headroom − 1.5·VK, where headroom is the distance from the rail to the end of the specified range (not the range itself). Rail-to-rail inputs: a small negative value (the range extends beyond the rail by that much). |
-| `VK` | V | width of the gain roll-off at the input-range edges | 0.15 / 0.1 | Keep the default unless the datasheet plots the edge. Rail-to-rail CMOS: 0.05. |
+| `VK` | V | width of the gain roll-off at the input-range edges; it also sets how sharply a follower driven past the edge stops (the knee is a few `VK` wide) | 0.15 / 0.1 | Keep the default for bipolar and JFET inputs unless the datasheet plots the edge (a gradual loss of gain, e.g. offset or gain vs V_CM, may need 0.3–0.5). CMOS inputs whose range is ended by the tail current source stop sharply: use 0.01–0.02 (a transistor-level p-MOS reference gives 0.01). Rail-to-rail CMOS whose range extends beyond the rails: 0.05. A smaller `VK` moves the follower's stop point toward the half-gain point, so set `ICMHI`/`ICMLO` after choosing `VK`. |
+| `PRHI`, `PRLO` | – | phase reversal through a junction of the input pair at the top / bottom: npn bipolar inputs reverse at the top (base-collector junction), p-JFET inputs at the bottom (gate-drain junction), CMOS inputs do not reverse; the output runs to the wrong rail at about `PRHI`·`SR`; 0 = none | 0, 0 / 0, 0 | Only if the datasheet shows or states that the output reverses when an input goes beyond the top (bottom) of the common-mode range: set `PRHI` (`PRLO`) = 2 (transistor-level references give 1.6–3.5). "No phase reversal", or nothing said → 0. Reversal is normally one-sided: set only the side the datasheet names. |
+| `VPRHI`, `VPRLO` | V | position of the reversal: input voltage below `vcc` / above `vee` where the output flips; < 0 = beyond the rail | 0, 0 / 0, 0 | From the stated or plotted input voltage at which the output reverses (e.g. "reverses for inputs within 0.2 V of V−" → `VPRLO` = 0.2). If only "beyond the common-mode range" is said, use the headroom at the end of the specified range (V_CC − V_CM,max, or V_CM,min − V_EE). |
+| `IPR` | A | input current through the conducting junction during reversal; about the tail current of the input pair | 0 (= `SR`·30 pF) / 0 (= `SR`·1 pF) | Keep 0 unless the datasheet gives the input current during reversal, or a series resistance R that prevents reversal for an overdrive V_od: then `IPR` = V_od/(0.9·R). |
+| `VCMT`, `VKT` | V | rail-to-rail input crossover: position of the transition between the input pairs (distance below vcc) and its width | 1, 0.1 / 1, 0.1 | From the V_OS vs V_CM plot of a rail-to-rail input part: VCMT = V_CC − (V_CM at the middle of the step); VKT = (10 %–90 % width of the step) / 2.2. Needed only with `DVOST` or `DIBT`. |
+| `DVOST` | V | offset change across the transition; `VOS` applies below it | 0 / 0 | From the same plot (typical curve): V_OS above the transition minus V_OS below it. `VOS` is then the value below the transition, where it is usually specified (e.g. V_CM = V_S/2). |
+| `DIBT` | A | bias-current change across the transition, each pin | 0 / 0 | From an I_B vs V_CM plot: I_B above the transition minus I_B below it (bipolar rail-to-rail inputs often change sign). |
 | `VHD`, `VLD` | V | minimum headroom between the output and vcc / vee (no load) | 2, 2 / 1.2, 1.2 | From "output voltage swing" at load RL: VHD = (V_CC − V_OH) − (V_OH/RL)·ROUT, VLD = (V_OL − V_EE) − (|V_OL|/RL)·ROUT (V_OH, V_OL measured from ground, RL to ground). Use a typical swing (with several loads, the lightest load) in preference to a min spec at the chosen load; a min-only swing gives a pessimistic VHD, so say so. For a single supply, RL usually goes to V_S/2: use that voltage instead of ground. If the result is ≤ 0, the swing spec and ROUT disagree (often because r_o is a high-frequency value): take the swing from a plot, or set 0.05, say so, and state the swing the model will then give, (V_CC − VHD)·RL/(RL + ROUT). |
 
 ### Output stage (per output for the FDA)
@@ -196,10 +220,11 @@ GBW = fu / (that factor).
 | Param | Unit | Meaning | Default | How to get it |
 |---|---|---|---|---|
 | `A0CM` | V/V | DC gain of the CM error amplifier | 10k | Rarely given; a "V_OCM gain error" e implies A0CM ≈ 1/e. |
-| `GBWCM` | Hz | unity-gain frequency of the CM error amplifier | 50Meg | From "V_OCM small-signal bandwidth" f_ocm: GBWCM ≈ 0.8·f_ocm (with the default FPCM2 the closed CM bandwidth is about 1.3·GBWCM). |
-| `FPCM2` | Hz | second pole of the CM loop | 200Meg | Keep ≥ 4·GBWCM unless the V_OCM response shows peaking. |
+| `GBWCM` | Hz | unity-gain frequency of the CM error amplifier | 50Meg | From "V_OCM small-signal bandwidth" f_ocm: GBWCM ≈ 0.8·f_ocm (with `FPCM2` = 0, i.e. 4·GBWCM, the closed CM bandwidth is about 1.3·GBWCM). |
+| `FPCM2` | Hz | second pole of the CM loop; 0 = 4·`GBWCM` | 0 | Leave 0 unless the V_OCM response shows peaking; then lower it relative to `GBWCM`. The CM-loop phase margin depends only on FPCM2/GBWCM: 76° at 4 (the default, no peaking), 72° at 3, 65° at 2, 60° at 1.5. |
 | `SRCM` | V/s | slew rate of the output CM voltage | 100Meg | "V_OCM slew rate". |
 | `VOSCM` | V | output CM offset: V(out,cm) = V(vocm) + VOSCM | 1m | "Output common-mode offset" / "V_OCM offset (from V_OCM input)". |
+| `KBAL` | – | output balance error: the output CM moves by KBAL × the differential output | 0 | "Output balance error" (ΔV_OC/ΔV_OD), dB → ratio 10^(dB/20); use the low-frequency value. |
 | `RVOCM` | Ω | vocm pin: 2·RVOCM to each rail, i.e. RVOCM to mid-supply when the pin is open | 50k | "V_OCM input resistance" (the pin's resistance). If the datasheet's default V_OCM is not mid-supply, say so: the model always floats to mid-supply. |
 | `CVOCM` | F | vocm pin capacitance | 1p | "V_OCM input capacitance", else default. |
 
@@ -208,8 +233,10 @@ map them as above (input-referred, per input pin for INOISE and IB).
 
 ### Not modelled
 
-Temperature drifts, output balance error, overload recovery time, phase reversal,
-input-range-dependent offset, settling tails, EMI rejection. Mention relevant
+Temperature drifts, overload recovery time, settling tails, EMI rejection,
+offset changes with V_CM other than a rail-to-rail crossover step, input protection
+(ESD) diodes to the rails, and changes of GBW, SR or noise across a rail-to-rail
+crossover. Mention relevant
 datasheet values in the notes, but do not try to map them.
 
 ## Plausibility ranges by device class
@@ -241,11 +268,13 @@ results.
 
 1. GBW > fu, and `SR/(2π·GBW)` is between about 10 mV and 2 V. A much larger value
    usually means a wrong unit (V/µs vs V/s) or a decompensated part.
-2. Slew rate against the large-signal plots, if there are any. A "maximum peak output
-   voltage vs frequency" curve is measured with an overdriven input, so the output
-   becomes a slew-limited triangle: its knee is at f ≈ `SR/(4·Vp,max)` and above it
-   the curve falls as `SR/(4f)`. (`SR/(2π·Vp)` is the full-power bandwidth for an
-   undistorted sine, about 0.64 times lower; do not compare it with this curve.)
+2. Slew rate against the large-signal plots, if there are any. For a "maximum peak
+   output voltage vs frequency" curve, first read its test condition. Measured with an
+   overdriven input (no distortion limit stated), the output becomes a slew-limited
+   triangle: its knee is at f ≈ `SR/(4·Vp,max)` and above it the curve falls as
+   `SR/(4f)`. Measured at a fixed distortion (e.g. "THD = 1 %"), the output is still a
+   sine: the knee is at `SR/(2π·Vp,max)` and the curve falls as `SR/(2πf)`, 0.64 times
+   lower.
    A follower pulse plot should show slopes of about `SR·RL/(RL+ROUT)`.
 3. `ICCQ` is per amplifier.
 4. `VHD + VLD` < V_CC − V_EE, and `ICMHI + ICMLO` < V_CC − V_EE.
@@ -259,6 +288,20 @@ results.
 10. Redo each unit conversion once more against the copied datasheet row.
 11. Compare each extracted value with the plausibility range of the part's class;
     re-check any value far outside it.
+12. CMRR left at the unity-gain frequency: `CMRR·FCMRR/GBW` (with `FCMRR` set; 0 is
+    always fine) should be at least about 3 (10 dB), comfortably 10 (20 dB). The
+    model's CMRR error source is in series with the input and grows at 20 dB/decade
+    above `FCMRR`, so below about 3 a voltage follower's step response rings
+    (≈ 15 % overshoot at 6 dB, ≈ 50 % at 0 dB). A lower value usually means `FCMRR`
+    was read where the curve steepens (other poles), or from the wrong curve:
+    re-read near the bend. If the datasheet really shows less, keep it and say that
+    the follower response will overshoot.
+13. Poles: with `FP2` set, `FP2/GBW` ≥ 1.2 (45° phase margin), and `FP3` ≥ `FP2`.
+    The output pole 1/(2π·`ROUT`·`COUT`) should be above about 10·`GBW`; nearer, it
+    takes about atan(`GBW`/f_out) from the phase margin that the FP2 table assumes
+    (e.g. 14° for the default `ROUT` = 75 Ω and `COUT` = 3 pF at `GBW` = 100 MHz).
+    Then choose FP2 for a correspondingly larger phase margin, or check whether
+    `COUT` should be smaller for that part (it is rarely given).
 
 ## Output
 
@@ -289,7 +332,7 @@ left at the default):
 | Param | Value | Datasheet value and condition | Source | Method | Confidence |
 |---|---|---|---|---|---|
 | A0 | 200k | 200 V/mV typ, RL ≥ 2 kΩ | Table 6.5, p. 5 | converted (×1000) | high |
-| FP2 | 3Meg | — | — | default | — |
+| FP2 | 0 (= 3·GBW) | — | — | default | — |
 
 Method is one of `direct`, `converted` (show the arithmetic), `from plot`
 (figure, reading uncertainty), `derived` (formula above), `default`.

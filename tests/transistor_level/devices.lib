@@ -1,0 +1,8 @@
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* Generic device models (self-written, round-number parameters)
+.model QN NPN(IS=1e-15 BF=200 VAF=100 BR=2 RB=200 RC=20 CJE=1p CJC=0.5p CJS=1p TF=0.3n TR=20n)
+.model QP PNP(IS=1e-15 BF=50 VAF=50 BR=2 RB=200 RC=50 CJE=1p CJC=1p CJS=1p TF=5n TR=50n)
+.model JP PJF(VTO=-1.5 BETA=0.5m LAMBDA=0.01 IS=1e-14 RD=10 RS=10 CGS=3p CGD=1.5p)
+.model NM NMOS(LEVEL=1 VTO=0.7 KP=100u LAMBDA=0.02 GAMMA=0.4 PHI=0.7 CGSO=0.3n CGDO=0.3n CBD=20f CBS=20f)
+.model PM PMOS(LEVEL=1 VTO=-0.7 KP=40u LAMBDA=0.02 GAMMA=0.4 PHI=0.7 CGSO=0.3n CGDO=0.3n CBD=20f CBS=20f)
+.model DD D(IS=1e-15)

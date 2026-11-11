@@ -20,8 +20,8 @@ overload and saturation behaviour.
 | `models/opamp_full.lib` | `OPAMP_FULL` (single-ended op amp) |
 | `models/fdopamp_full.lib` | `FDOPAMP_FULL` (fully differential amplifier) and `FDOPAMP_CORE` (the same with the common-mode loop brought out for loop-gain tests) |
 | `models/pspice/` | the same two libraries for PSpice, generated from the ones above by `tools/make_pspice_port.py` |
-| `tests/` | characterization decks that measure every specified quantity and print it, and `cross_sim.py`, which compares ngspice, LTspice and PSpice |
-| `examples/` | eight example netlists and `run_examples.py`, which runs them and draws the figures |
+| `tests/` | characterization decks that measure every specified quantity and print it; `cross_sim.py`, which compares ngspice, LTspice and PSpice; and `transistor_level/`, transistor-level reference op amps for the phase-reversal model |
+| `examples/` | nine example netlists and `run_examples.py`, which runs them and draws the figures |
 | `skills/datasheet-to-params/SKILL.md` | instructions for an AI assistant (any vendor) to extract the model parameters from an op-amp or FDA datasheet, with a source and confidence for each value |
 | `docs/examples_slides.pdf` | slides with the examples: stability, noise, nonlinear effects |
 | `docs/figures/` | figures produced by `run_examples.py` |
@@ -43,7 +43,9 @@ overload and saturation behaviour.
 **Nonlinear**
 - input offset voltage, bias and offset currents (`IB > 0` flows into the pins)
 - a `tanh()` input transconductor: one mechanism gives both the slew rate `SR` and a realistic growth of distortion as the signal approaches the full-power bandwidth. Optionally the rising and falling slew rates differ (`SRR`, `SRF`; OPAMP_FULL), as in many BiFET op amps, without changing the small-signal gain
-- input common-mode range with a soft edge (the input stage's gm collapses near the rails)
+- input common-mode range with a soft edge (the input stage's gm collapses near the rails); each edge is judged by the input that keeps the stage working (the lower input at the top, the higher at the bottom), so a follower driven past the range stops at the edge, as a transistor-level stage does
+- optional phase reversal through an input junction (`PRHI`, `PRLO`, `VPRHI`, `VPRLO`, `IPR`), as in many JFET and older bipolar op amps. When an input goes far enough beyond the range, a junction of the input pair conducts (the base-collector junction of an npn pair at the top, the gate-drain junction of a p-JFET pair at the bottom). Its current flows from the input pin into the gain node and drives the output to the wrong rail, faster than the slew rate. As in real parts the reversal is one-sided, the input pin then carries a current of the order of the tail current, and a series resistor at the input prevents it. Checked against minimal transistor-level op amps with npn, p-JFET and p-MOS input pairs ([tests/transistor_level](tests/transistor_level/README.md))
+- optional rail-to-rail input crossover (`VCMT`, `VKT`, `DVOST`, `DIBT`): where the input common-mode voltage moves from one input pair to the other, the offset and the bias currents step smoothly
 - optional input-pair tail capacitance (`KJUMP`): the classic asymmetric follower pulse response (Solomon, IEEE JSSC 1974), in which a fast input step makes the output jump before it slews. The jump is set directly, because the charging path of the tail node can have current gain (in the µA741 the jump is larger than the tail capacitance alone would give). Small-signal behaviour is unchanged
 - optional differential input clamp: two anti-parallel diodes between `inp` and `inn` (`VCLMP`, `RCLMP`); no clamps to the rails
 - output swing limited by the supplies (`VHD`, `VLD` headroom) with a soft clamp of the gain node, so the output recovers from saturation immediately
@@ -56,6 +58,7 @@ overload and saturation behaviour.
 - `RIC || CIC` is the common-mode input impedance of each input pin to ground. The datasheet values can be used directly: “common-mode input impedance: 34 MΩ ∥ 4 pF” → `RIC=34Meg CIC=4p`. Only if a datasheet says the value was measured with both inputs tied together, use `RIC = 2·R` and `CIC = C/2`.
 - The CMRR error is `(Vcm - VCMN)/CMRR`, where `VCMN` (default: mid-supply) is the common-mode voltage at which `VOS` is specified. PSRR is referred to the nominal supplies `VCCN`, `VEEN`.
 - In the class-AB crossover (|Iout| below about `VXO/ROUT`) the small-signal output resistance is `2*ROUT`; it is `ROUT` once the output carries more than about `2*VXO/ROUT`. Set `VXO=0` for a constant `ROUT`.
+- `FP2`, `FP3`, `FCMRR` and `FPSRR` default to 0, which scales them with `GBW`, so changing `GBW` alone keeps the phase margin and the CMRR left at the unity-gain frequency. Likewise `FPCM2` defaults to 4·`GBWCM`, which keeps the phase margin of the FDA's common-mode loop. A fixed `FCMRR` that leaves less than about 10 dB of CMRR at `GBW` (`CMRR`·`FCMRR`/`GBW` < 3) makes a follower's step response ring: the CMRR error source is in series with the input and grows with frequency.
 - Noise levels are exact at 27 °C and scale with kT at other temperatures.
 
 ## Quick start
@@ -106,7 +109,7 @@ suffixes (`k`, `Meg`, `G`, `m`, `u`, `n`, `p`, `f`).
 |---|---|---|---|---|
 | `A0` | V/V | open-loop DC gain | 200k | 100k |
 | `GBW` | Hz | gain-bandwidth product: unity-gain frequency of the dominant-pole response | 1Meg | 100Meg |
-| `FP2`, `FP3` | Hz | second and third (non-dominant) poles | 3Meg, 10Meg | 300Meg, 1G |
+| `FP2`, `FP3` | Hz | second and third (non-dominant) poles; 0 = 3·`GBW`, 10·`GBW` (3Meg, 10Meg / 300Meg, 1G at the default `GBW`) | 0, 0 | 0, 0 |
 | `SR` | V/s | slew rate; for the FDA the slew rate of the differential output (each output slews at `SR/2`) | 0.5Meg | 200Meg |
 | `SRR`, `SRF` | V/s | OPAMP_FULL only: slew rates of the rising and falling output; 0 = `SR`. The LF155 datasheet pulse photo gives about 5.5Meg / 11Meg | 0 | – |
 | `KJUMP` | – | input-pair tail capacitance effect: in an unloaded voltage follower, output jump divided by a fast input common-mode step; 0 = off. The sign gives the input-pair polarity: positive for npn/nmos (jump on rising edges), negative for pnp/pmos/p-JFET (jump on falling edges). µA741 datasheet pulse response: `KJUMP` ≈ 0.27 with the default `SR` | 0 | 0 |
@@ -118,7 +121,7 @@ suffixes (`k`, `Meg`, `G`, `m`, `u`, `n`, `p`, `f`).
 | `VOS` | V | input offset voltage, in series with the + input | 1m | 1m |
 | `IB` | A | input bias current (average of the two pins); `IB > 0` flows into the pins (NPN input), `IB < 0` out of them (PNP input) | 80n | 2u |
 | `IOS` | A | input offset current, I(inp) − I(inn) | 20n | 0.1u |
-| `RID`, `CID` | Ω, F | differential input resistance and capacitance (between `inp` and `inn`) | 2Meg, 1.4p | 1Meg, 1p |
+| `RID`, `CID` | Ω, F | differential input resistance and capacitance (between `inp` and `inn`); the current through `RID` saturates at \|`IB`\|, as the base currents of a bipolar pair do | 2Meg, 1.4p | 1Meg, 1p |
 | `RIC`, `CIC` | Ω, F | common-mode input resistance and capacitance of each input pin to ground | 400Meg, 0.75p | 200Meg, 1p |
 
 **Differential input clamp**
@@ -136,9 +139,9 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 | Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
 |---|---|---|---|---|
 | `CMRR` | ratio | DC common-mode rejection ratio (31.6k = 90 dB) | 31.6k | 31.6k |
-| `FCMRR` | Hz | frequency above which CMRR falls at 20 dB/decade | 200 | 100k |
+| `FCMRR` | Hz | frequency above which CMRR falls at 20 dB/decade; 0 = the value that leaves 16 dB (`OPAMP_FULL`) / 30 dB (`FDOPAMP_FULL`) of CMRR at `GBW`, i.e. 6.32·`GBW`/`CMRR` / 31.6·`GBW`/`CMRR` (200 / 100k at the defaults) | 0 | 0 |
 | `PSRRP`, `PSRRN` | ratio | DC rejection of the positive and of the negative supply | 31.6k, 31.6k | 10k, 10k |
-| `FPSRR` | Hz | frequency above which PSRR falls at 20 dB/decade | 100 | 100k |
+| `FPSRR` | Hz | frequency above which PSRR falls at 20 dB/decade; 0 = 10⁻⁴·`GBW` / 10⁻³·`GBW` (100 / 100k at the default `GBW`) | 0 | 0 |
 | `FPSRRP`, `FPSRRN` | Hz | separate PSRR+ / PSRR− corner frequencies; 0 = `FPSRR` | 0, 0 | 0, 0 |
 | `VCCN`, `VEEN` | V | nominal supply voltages; the PSRR error is referred to them | 15, −15 | 5, −5 |
 | `VCMN` | V | input common-mode voltage at which `VOS` is specified; the CMRR error is (Vcm − `VCMN`)/`CMRR` | mid-supply | mid-supply |
@@ -159,6 +162,13 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 | `ICCQ` | A | quiescent supply current, from `vcc` to `vee` | 1.7m | 10m |
 | `ICMHI`, `ICMLO` | V | input common-mode range: distance below `vcc` and above `vee` at which the input-stage gm has fallen to half; negative values extend the range beyond the rails | 2, 2 | 1.5, 1 |
 | `VK` | V | width of the gm roll-off at the edges of the input range | 0.15 | 0.1 |
+| `PRHI`, `PRLO` | – | phase reversal through an input junction at the top / bottom (npn: top; p-JFET: bottom); the output runs to the wrong rail at about `PRHI`·`SR` (`PRLO`·`SR`); 0 = no junction | 0, 0 | 0, 0 |
+| `VPRHI`, `VPRLO` | V | position of the junction: input voltage below `vcc` / above `vee` at which the output flips; negative = beyond the rail | 0, 0 | 0, 0 |
+| `IPR` | A | input current of a conducting junction (into the pin at the top, out of it at the bottom), about the tail current of the input pair; 0 = the input stage's current limit. A source resistance R prevents the reversal while 0.9·R·`IPR` exceeds the overdrive | 0 (`SR`·30 pF) | 0 (`SR`·1 pF) |
+| `VCMT` | V | rail-to-rail input crossover: position of the transition between the two input pairs, below `vcc` | 1 | 1 |
+| `VKT` | V | width of the crossover transition | 0.1 | 0.1 |
+| `DVOST` | V | offset change across the transition (`VOS` applies below it); 0 = none | 0 | 0 |
+| `DIBT` | A | bias-current change across the transition, each pin; 0 = none | 0 | 0 |
 | `VHD`, `VLD` | V | minimum headroom between the output and the positive / negative rail (output swing limit) | 2, 2 | 1.2, 1.2 |
 
 **Output stage** (per output for the FDA)
@@ -176,9 +186,10 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 |---|---|---|---|
 | `A0CM` | V/V | DC gain of the common-mode error amplifier | 10k |
 | `GBWCM` | Hz | unity-gain frequency of the common-mode error amplifier | 50Meg |
-| `FPCM2` | Hz | second pole of the common-mode loop | 200Meg |
+| `FPCM2` | Hz | second pole of the common-mode loop; 0 = 4·`GBWCM` (200Meg at the default `GBWCM`) | 0 |
 | `SRCM` | V/s | slew rate of the output common-mode voltage | 100Meg |
 | `VOSCM` | V | output common-mode offset: V(out,cm) = V(`vocm`) + `VOSCM` | 1m |
+| `KBAL` | – | output balance error: the output common-mode voltage moves by `KBAL` times the differential output voltage (datasheet dB → ratio); 0 = none | 0 |
 | `RVOCM` | Ω | `vocm` pin bias: `2*RVOCM` (noiseless) to each rail, i.e. `RVOCM` to mid-supply when the pin is left open | 50k |
 | `CVOCM` | F | capacitance of the `vocm` pin to ground | 1p |
 
@@ -188,7 +199,7 @@ parameter set for a 5 V CMOS rail-to-rail op amp is given at the end of `opamp_f
 
 ## Examples
 
-Examples 1–8 are described in [docs/examples_slides.pdf](docs/examples_slides.pdf).
+Examples 1–9 are described in [docs/examples_slides.pdf](docs/examples_slides.pdf).
 Each one shows behaviour that simpler macromodels do not reproduce.
 
 | Example | What it shows | Key result |
@@ -201,12 +212,15 @@ Each one shows behaviour that simpler macromodels do not reproduce.
 | `06_opamp_vom_vs_freq.cir` | maximum peak output voltage vs frequency, 20 points per decade from 100 Hz to 1 MHz, compared with the µA741 datasheet curve (traced from the figure, `ua741_vom_datasheet.dat`); runs about 3 min | overdriven: ±13.9 V up to 8 kHz, then the slew-limited triangle peak `SR/(4f)`: 6.16 V at 20 kHz (datasheet 6.17 V); above 50 kHz the datasheet is 20–40 % higher. The largest peak with THD ≤ 1 % rolls off an octave earlier (3.75 V at 20 kHz) |
 | `07_opamp_follower_pulse.cir` | voltage-follower large-signal pulse response (±5 V, 2 kΩ ∥ 100 pF) compared with the µA741 datasheet curve (`ua741_pulse_datasheet.dat`) | defaults: no jump, 0.48 V/µs on both edges. `KJUMP=0.27`: 0.3 µs after the step the output is at −2.32 V (datasheet −2.46 V), then it slews at 0.48 V/µs (datasheet 0.508 rising, 0.475 falling); RMS deviation from the datasheet curve 0.06 V (1.16 V with the defaults) |
 | `08_opamp_follower_npn_pnp.cir` | the same jump for npn and pnp input stages (`KJUMP` = 0.25 and −0.25), follower with a 0 → 10 V → 0 pulse, as in Solomon (1974), Fig. 16 | npn: the output jumps 2.38 V on the rising edge; pnp: it drops 2.37 V on the falling edge (theory 0.964 · 2.5 V = 2.41 V); the other edge slews at 0.48 V/µs as without the jump |
+| `09_opamp_reversal_crossover.cir` | a) phase reversal: follower on ±15 V driven by a ±15 V triangle, beyond its ±13 V input range, with a junction 1 V below the range (`PRLO` = 1, `VPRLO` = 1, as in a p-JFET input), from a 0 Ω and a 100 kΩ source; b) rail-to-rail input crossover: offset vs input common-mode voltage of a 5 V CMOS follower (`VCMT` = 1.3, `DVOST` = −0.6m) | a) only at the bottom, once the input passes −14 V, the output runs to the positive rail and the input sources about 15 µA; through 100 kΩ it only stops at the swing limit; b) offset 0.20 mV below the transition, −0.40 mV above it (step −0.60 mV at 3.7 V) |
 
 ![Maximum peak output voltage vs frequency, from example 6](docs/figures/ex06_vom.png)
 
 ![Voltage-follower pulse response with the input-pair tail capacitance, from example 7](docs/figures/ex07_pulse.png)
 
 ![Follower jump for npn and pnp input stages, from example 8](docs/figures/ex08_npn_pnp.png)
+
+![Phase reversal and rail-to-rail input crossover, from example 9](docs/figures/ex09_reversal_crossover.png)
 
 The loop-gain examples combine two AC runs (series voltage injection, shunt current injection)
 inside the ngspice control block, so one run of the netlist gives the final loop gain T and the
@@ -232,11 +246,25 @@ ngspice-42 and the default parameters:
 | tail capacitance `KJUMP` = 0.25: follower jump / falling 10–90 % time ratio | 2.39 V (theory 2.41 V) / 1.000 (1) | | |
 | `KJUMP` = −0.25: jump on the falling edge / rising time ratio | −2.39 V (theory −2.41 V) / 1.000 (1) | | |
 | `SRR` = 0.5Meg, `SRF` = 1Meg: rising time ratio / falling slew ratio | 1.000 (1) / 2.000 (2) | | |
+| phase reversal `PRLO` = 1, `VPRLO` = 1: followers at −14.5 V (reversed, input current) / +14.5 V / −14.5 V through 100 kΩ | +12.53 V, −15.0 µA (`SR`·30 pF) / +12.53 V / −12.53 V (not reversed) | `KBAL` = 1m: output CM change / differential output change | 1.000m (1m) |
+| crossover `DVOST` = 1m, `DIBT` = −200n: offset step / bias-current step across the transition | 0.990 mV (1 mV − 2 V/A0) / −195 nA (−200 nA + 2 V/`RIC`) | | |
+| follower driven past the top of the range (`ICMHI` = 1.5, `VK` = 0.05), input 14.0 V / 14.8 V | 13.68 V / 13.68 V (stops at the edge) | | |
 | `FPSRRP` = 10, `FPSRRN` = 1k: PSRR+ / PSRR− at 10 kHz | 30.0 dB / 69.95 dB (theory 30.0 / 69.96 dB) | `FPSRRP` = 10k, `FPSRRN` = 1Meg: PSRR+ / PSRR− at 1 MHz | 40.0 dB / 76.99 dB (theory 40.0 / 76.99 dB) |
 
 `tests/fd_middlebrook.cir` also checks the Middlebrook loop gains of the FDA against a
 conventional L/C loop break (CM: identical; DM: within 0.5 %, the residual being the loading
 error of the L/C reference).
+
+`tests/transistor_level/` holds three minimal transistor-level op amps (npn, p-JFET and p-MOS
+input pairs, generic device models), with schematics, a characterization script and
+`compare_reversal.py`. That script drives them and OPAMP_FULL, with fitted parameters, as
+followers beyond the input range from source resistances of 0, 10 k and 100 kΩ. In the
+model, reversal occurs on the same side as in the transistor circuits, at a threshold within
+15 mV, and for the same source resistances. Its entry speed from a 0 Ω source is within 6 %.
+The input current in reversal agrees within 2 %, and the p-MOS follower stops at the edge of
+the range within 1 mV, without reversal. The model has no saturation delay when it leaves
+reversal; see
+[tests/transistor_level/README.md](tests/transistor_level/README.md).
 
 ## Compatibility
 
@@ -248,7 +276,7 @@ error of the L/C reference).
 | QSPICE, Xyce | not tested; they support the constructs used (B-sources, `PARAMS:`, local `.param`, diode `KF`/`AF`) |
 | HSPICE, Spectre | not supported: they need their own port (no B-sources) |
 
-The main libraries use B-sources (`tanh`, `min`, `max`, `sqrt`), subcircuit parameters with
+The main libraries use B-sources (`tanh`, `min`, `max`, `sqrt`, `pwr`), subcircuit parameters with
 `PARAMS:`, the C-style `?:` in a few parameter expressions and the diode `KF`/`AF` flicker-noise
 parameters. Two details keep them portable:
 

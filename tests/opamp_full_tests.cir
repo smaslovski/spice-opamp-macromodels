@@ -95,6 +95,46 @@ X15   0 n15 vcc vee15 o15 OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k
 Lfb15 o15 n15 1e9
 Cg15  n15 0 1e9
 
+* --- 15. Phase reversal through an input junction (PRLO = 1, VPRLO = 1) --------
+*         input range ends at -13 V (ICMLO = 2), the junction conducts below -14 V;
+*         IPR = 0 -> SR*30pF = 15 uA. expected: o16 (-14.5 V in) reversed, at the
+*         positive swing limit, input current -15 uA (out of the pin); o17
+*         (+14.5 V in) not reversed (no junction at the top): +12.53 V; o18
+*         (-14.5 V in through 100k) not reversed: 0.9*100k*15 uA = 1.35 V > 0.5 V
+*         overdrive, -12.53 V
+Vin16 s16 0 -14.5
+Vs16  s16 p16 0
+X16   p16 o16 vcc vee o16 OPAMP_FULL PARAMS: PRLO=1 VPRLO=1
+Rl16  o16 0 2k
+Vin17 p17 0 14.5
+X17   p17 o17 vcc vee o17 OPAMP_FULL PARAMS: PRLO=1 VPRLO=1
+Rl17  o17 0 2k
+Rs18  s16 p18 100k
+X18   p18 o18 vcc vee o18 OPAMP_FULL PARAMS: PRLO=1 VPRLO=1
+Rl18  o18 0 2k
+
+* --- 16. Rail-to-rail input crossover: VCMT = 1.5, DVOST = 1m, DIBT = -200n --------
+*         followers 1 V below and 1 V above the transition (13.5 V); expected
+*         offset step = DVOST minus the gain error, I(Vs20) - I(Vs19) = DIBT + RIC current
+Vin19 s19 0 12.5
+Vs19  s19 p19 0
+X19   p19 o19 vcc vee o19 OPAMP_FULL PARAMS: ICMHI=-0.1 ICMLO=-0.1 VHD=0.05 VLD=0.05
++ CMRR=1e12 VCMT=1.5 VKT=0.1 DVOST=1m DIBT=-200n
+Vin20 s20 0 14.5
+Vs20  s20 p20 0
+X20   p20 o20 vcc vee o20 OPAMP_FULL PARAMS: ICMHI=-0.1 ICMLO=-0.1 VHD=0.05 VLD=0.05
++ CMRR=1e12 VCMT=1.5 VKT=0.1 DVOST=1m DIBT=-200n
+
+* --- 17. Follower driven past the top of the input range (ICMHI = 1.5, VK = 0.05) --
+*         expected: the output stops near the edge (13.5 V) and stays there as the
+*         input rises further (it does not fall back as 2*edge - input)
+Vin21 p21 0 14.0
+X21   p21 o21 vcc vee o21 OPAMP_FULL PARAMS: ICMHI=1.5 VK=0.05 VHD=0.2
+Rl21  o21 0 10k
+Vin22 p22 0 14.8
+X22   p22 o22 vcc vee o22 OPAMP_FULL PARAMS: ICMHI=1.5 VK=0.05 VHD=0.2
+Rl22  o22 0 10k
+
 .control
   op
   echo "--- DC operating point ---"
@@ -103,6 +143,15 @@ Cg15  n15 0 1e9
   *           o4 = 11*VOS + (IB-IOS/2)*10k
   print -i(Vcc8) i(Vee8)
   * expected (no load current): ICCQ in each rail
+  * test 15: phase reversal (expected o16 +12.53 V, i(Vs16) -15 uA; o17 and o18
+  *          at the swing limits, +12.53 V and -12.53 V, i.e. not reversed)
+  print v(o16) i(Vs16) v(o17) v(o18)
+  * test 16: crossover (expected 1 mV - 2 V/A0 = 0.990 mV and -200 nA + 2 V/400 Meg = -195 nA)
+  let dvos16 = (v(o20)-v(s20))-(v(o19)-v(s19))
+  let dib16 = i(Vs20)-i(Vs19)
+  print dvos16 dib16
+  * test 17: follower past the input range (expected: equal outputs near 13.5 V)
+  print v(o21) v(o22)
 
   ac dec 20 0.1 100Meg
   let ad    = vdb(o1)

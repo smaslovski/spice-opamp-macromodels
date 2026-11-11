@@ -1,0 +1,17 @@
+* Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
+* C: CMOS two-stage op amp with a p-MOS input pair, +/-2.5 V
+.subckt OPA_PMOS inp inn vcc vee out
+* tail: pmos current source 20 uA from vcc
+Mb  b b vcc vcc PM W=20u L=2u
+Ib  b vee 20u
+M10 t b vcc vcc PM W=20u L=2u
+* input pair (inn on M1, inp on M2) with nmos mirror load
+M1 d1 inn t t PM W=40u L=1u
+M2 d2 inp t t PM W=40u L=1u
+M3 d1 d1 vee vee NM W=10u L=2u
+M4 d2 d1 vee vee NM W=10u L=2u
+* second stage: nmos common source, pmos current-source load, Miller capacitor
+M5 out d2 vee vee NM W=40u L=1u
+M6 out b vcc vcc PM W=100u L=2u
+Cc d2 out 3p
+.ends

@@ -41,6 +41,13 @@ CASES = {
     'dc_rr': ('opamp_full.lib', "Vcc vcc 0 5\nVee vee 0 0\nVin in 0 4.9\nX1 in out vcc vee out OPAMP_FULL PARAMS: "
               "GBW=10Meg SR=10Meg VCCN=5 VEEN=0 VHD=0.05 VLD=0.05 ICMHI=-0.1 ICMLO=-0.1 VK=0.05 ROUT=100 VXO=0\n"
               "RL out 0 1k\n", ".dc Vin 4.8 5 0.05", [('vo', 'dc', 'V(out)@4.9', 1e-5)]),
+    'dc_prev': ('opamp_full.lib', SUP15 + "Vin in 0 0\nVs in inp 0\nX1 inp out vcc vee out OPAMP_FULL PARAMS: "
+                "PRHI=2 VPRHI=1 PRLO=1 VPRLO=1 IPR=20u\nRL out 0 2k\n",
+                ".dc Vin -14.5 14.5 0.5", [('vrevlo', 'dc', 'V(out)@-14.5', 1e-5), ('vrevhi', 'dc', 'V(out)@14.5', 1e-5),
+                                           ('vlin', 'dc', 'V(out)@10', 1e-5), ('ipr', 'dc', 'I(Vs)@-14.5', 1e-4)]),
+    'dc_rrx': ('opamp_full.lib', SUP15 + "Vin in 0 13.5\nVs in inp 0\nX1 inp out vcc vee out OPAMP_FULL PARAMS: "
+               "ICMHI=-0.1 ICMLO=-0.1 VHD=0.05 VLD=0.05 VCMT=1.5 VKT=0.1 DVOST=1m DIBT=-200n\nRL out 0 100k\n",
+               ".dc Vin 13.3 13.7 0.1", [('vos', 'dc', 'V(out)@13.5', 1e-5), ('ib', 'dc', 'I(Vs)@13.6', 3e-3)]),
     'ac_inv': ('opamp_full.lib', SUP15 + "Vin in 0 DC 0 AC 1\nR1 in m 1k\nR2 m out 10k\n"
                "X1 0 m vcc vee out OPAMP_FULL\n", ".ac dec 50 10 100Meg",
                [('g10k', 'ac', 'V(out)@10k', 1e-3), ('g100k', 'ac', 'V(out)@100k', 1e-3),
@@ -73,6 +80,9 @@ CASES = {
     'fd_dc': ('fdopamp_full.lib', SUP5 + "Vip ip 0 0.25\nVin in 0 -0.25\nVocm vocm 0 1\n" + FDGAIN4 +
               "X1 a b vcc vee outp outn vocm FDOPAMP_FULL\n", ".dc Vip 0 0.5 0.125",
               [('vop', 'dc', 'V(outp)@0.25', 1e-5), ('von', 'dc', 'V(outn)@0.25', 1e-3)]),
+    'fd_bal': ('fdopamp_full.lib', SUP5 + "Vip ip 0 0.25\nVin in 0 -0.25\nVocm vocm 0 1\n" + FDGAIN4 +
+               "X1 a b vcc vee outp outn vocm FDOPAMP_FULL PARAMS: KBAL=1m\n", ".dc Vip 0 0.5 0.125",
+               [('vop', 'dc', 'V(outp)@0.25', 1e-5), ('von', 'dc', 'V(outn)@0.25', 1e-3)]),
     'fd_ac': ('fdopamp_full.lib', SUP5 + "Vip ip 0 DC 0 AC 0.5\nVin in 0 DC 0 AC -0.5\n" + FDGAIN4 +
               "X1 a b vcc vee outp outn 0 FDOPAMP_FULL\n", ".ac dec 50 1k 1G",
               [('g1m', 'ac', 'V(outp)@1Meg', 1e-3), ('g20m', 'ac', 'V(outp)@20Meg', 1e-2)]),

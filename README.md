@@ -7,8 +7,8 @@ LTspice and PSpice.
 Both models are set up directly from datasheet-style parameters (gain, gain-bandwidth, slew
 rate, offsets, noise densities, swing, current limits, …) and reproduce the principal
 linear, noise and nonlinear effects of a real amplifier. They are meant for circuit-level
-work where the ideal op amp is too optimistic and a vendor transistor-level model is
-unavailable, too slow or opaque: stability and loop-gain analysis, noise budgets, distortion,
+work where the ideal op amp is too optimistic and a vendor model is unavailable,
+opaque or hard to adapt: stability and loop-gain analysis, noise budgets, distortion,
 overload and saturation behaviour.
 
 ![Loop gain of a follower driving 1 nF, from example 1](docs/figures/ex01_loopgain.png)
@@ -23,6 +23,7 @@ overload and saturation behaviour.
 | `tests/` | characterization decks that measure every specified quantity and print it; `cross_sim.py`, which compares ngspice, LTspice and PSpice; and `transistor_level/`, transistor-level reference op amps for the phase-reversal model |
 | `examples/` | nine example netlists and `run_examples.py`, which runs them and draws the figures |
 | `skills/datasheet-to-params/SKILL.md` | instructions for an AI assistant (any vendor) to extract the model parameters from an op-amp or FDA datasheet, with a source and confidence for each value |
+| `skills/model-to-params/` | instructions for an AI assistant (any vendor) to characterize a vendor's SPICE model of an op amp and convert the results into `OPAMP_FULL` parameters: three characterization decks for ngspice, LTspice and PSpice that the user runs once, the formulas, and an optional converter `log_to_params.py`; `tests/model_to_params_check.py` checks them |
 | `docs/examples_slides.pdf` | slides with the examples: stability, noise, nonlinear effects |
 | `docs/figures/` | figures produced by `run_examples.py` |
 
@@ -298,8 +299,24 @@ B-sources as `E`/`G … VALUE={…}` sources and `?:` as `IF()`, and adapts the 
   term, the clamps), the port forms the argument on its own node in convenient units, so the
   small-signal results stay exact and the bias point converges.
 - Every node needs two connections, so the 1 kΩ noise references get 1e15 Ω partners.
+- The shared nodes of the main libraries (next section) are kept in the `OPAMP_FULL` port
+  (faster) and written back into the expressions that use them in the `FDOPAMP_FULL` port,
+  which keeps it within the 64 nodes of the PSpice evaluation version. The script's
+  `--inline all` writes them back in both ports (for a large circuit in the evaluation
+  version), `--inline none` in neither (with a full PSpice).
 
 The noise levels are calibrated at 27 °C; at other temperatures they scale like kT.
+
+## Simulation speed
+
+ngspice evaluates a B-source by walking its expression tree, and one derivative tree per
+controlling node, at every Newton iteration; nothing is compiled, and a term multiplied by
+a zero parameter costs as much as any other. Since version 1.5.1, sub-expressions used by
+several sources (the input common-mode voltage, the smoothed input difference, the
+junction functions of the phase reversal, the crossover step, the slew-current limit)
+are computed once on their own nodes. This keeps each expression small and dependent on
+few nodes, and makes transient and DC analyses 1.4–1.9 times faster than in version 1.5,
+with the same results (time-step effects aside).
 
 ## Acknowledgements
 

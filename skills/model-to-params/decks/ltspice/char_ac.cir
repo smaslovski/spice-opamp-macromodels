@@ -1,0 +1,119 @@
+* <PART> characterization deck AC (model-to-params skill rev 1.0)
+.include <vendor model file>
+* the part, with the pins in the order inp inn vcc vee out
+.subckt DUT inp inn vcc vee out
+XV inp inn vcc vee out <VENDOR_SUBCKT>
+.ends DUT
+* operating condition (datasheet): supplies, input common-mode voltage, load
+.param VCC=15 VEE=-15 VCM=0 RL=10k
+* nominal values from the datasheet; they set time scales and test levels only
+.param GBWN=1Meg SRN=0.5Meg VSTEP=10 VSS=50m OVR=0.2 W=3 ILOAD=1m
+* derived (do not edit)
+.param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
+.param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+
+Vcc vcc 0 {VCC}
+Vee vee 0 {VEE}
+Vmid mid 0 {VCM}
+* Every instance is a follower at DC: an E source drives the - input from a
+* low-pass copy (1e18 ohm, 1 F: corner 2e-19 Hz) of the output. At the analysis
+* frequencies (1 mHz and up) the low-pass output is zero and the loop is open.
+* (No giant L and C: their admittance would swamp the tiny currents of CMOS inputs.)
+* 1: open-loop differential gain; the inputs get +0.5 V and -0.5 V AC
+Va1 a1 mid AC 0.5
+X1 a1 n1 vcc vee o1 DUT
+Ed1 d1 0 o1 mid 1
+Rd1 d1 s1 1e18
+Cd1 s1 0 1
+E1 n1x mid s1 0 1
+Vb1 n1 n1x AC 0.5 180
+R1 o1 mid {RL}
+* 2: common-mode gain (the - input follows the + input at AC)
+Va2 a2 mid AC 1
+X2 a2 n2 vcc vee o2 DUT
+Ed2 d2 0 o2 a2 1
+Rd2 d2 s2 1e18
+Cd2 s2 0 1
+Ec2 c2 0 a2 0 1
+E2 n2 c2 s2 0 1
+R2 o2 mid {RL}
+* 3, 4: positive and negative supply gain
+Vcc3 vcc3 0 {VCC} AC 1
+X3 mid n3 vcc3 vee o3 DUT
+Ed3 d3 0 o3 mid 1
+Rd3 d3 s3 1e18
+Cd3 s3 0 1
+E3 n3 mid s3 0 1
+R3 o3 mid {RL}
+Vee4 vee4 0 {VEE} AC 1
+X4 mid n4 vcc vee4 o4 DUT
+Ed4 d4 0 o4 mid 1
+Rd4 d4 s4 1e18
+Cd4 s4 0 1
+E4 n4 mid s4 0 1
+R4 o4 mid {RL}
+* 5: open-loop output impedance, at a DC load current ILOAD (sourced)
+X5 mid n5 vcc vee o5 DUT
+Ed5 d5 0 o5 mid 1
+Rd5 d5 s5 1e18
+Cd5 s5 0 1
+E5 n5 mid s5 0 1
+I5 o5 mid DC {ILOAD} AC 1
+* 6, 7: input impedance. The + pin is fed by an AC current of 1 A; its DC bias
+*    comes from Gb6 (Gb7), a 1 mS conductance to VCM through the same low-pass.
+* 6: - pin at VCM for AC: the + pin sees the differential and its own
+*    common-mode impedance
+X6 p6 n6 vcc vee o6 DUT
+Ed6 d6 0 o6 mid 1
+Rd6 d6 s6 1e18
+Cd6 s6 0 1
+E6 n6 mid s6 0 1
+Eb6 b6 0 p6 mid 1
+Rb6 b6 sb6 1e18
+Cb6 sb6 0 1
+Gb6 p6 mid sb6 0 1m
+I6 mid p6 AC 1
+R6 o6 mid {RL}
+* 7: - pin follows the + pin for AC: the + pin sees its common-mode impedance only
+X7 p7 n7 vcc vee o7 DUT
+Ed7 d7 0 o7 p7 1
+Rd7 d7 s7 1e18
+Cd7 s7 0 1
+Ec7 c7 0 p7 0 1
+E7 n7 c7 s7 0 1
+Eb7 b7 0 p7 mid 1
+Rb7 b7 sb7 1e18
+Cb7 sb7 0 1
+Gb7 p7 mid sb7 0 1m
+I7 mid p7 AC 1
+R7 o7 mid {RL}
+
+.ac dec 20 1m 100G
+.meas ac a0_db find mag(V(o1)) at=1m
+.meas ac fu when mag(V(o1))=1
+.meas ac ph_fu find V(o1) when mag(V(o1))=1
+.meas ac f40 when mag(V(o1))=100
+.meas ac f20 when mag(V(o1))=10
+.meas ac cmrr_db find mag(V(o1)/V(o2)) at=1m
+.meas ac fcm3 when mag(V(o1)/V(o2))=cmrr_db/sqrt(2) fall=1
+.meas ac fcm20 when mag(V(o1)/V(o2))=cmrr_db/10 fall=1
+.meas ac cmrr_gbw find mag(V(o1)/V(o2)) at={GBWN}
+.meas ac psrrp_db find mag(V(o1)/V(o3)) at=1m
+.meas ac fpsp3 when mag(V(o1)/V(o3))=psrrp_db/sqrt(2) fall=1
+.meas ac fpsp20 when mag(V(o1)/V(o3))=psrrp_db/10 fall=1
+.meas ac psrrn_db find mag(V(o1)/V(o4)) at=1m
+.meas ac fpsn3 when mag(V(o1)/V(o4))=psrrn_db/sqrt(2) fall=1
+.meas ac fpsn20 when mag(V(o1)/V(o4))=psrrn_db/10 fall=1
+.meas ac zo_a find mag(V(o5)) at={GBWN/100}
+.meas ac zo_b find mag(V(o5)) at={GBWN/10}
+.meas ac zo_c find mag(V(o5)) at={GBWN}
+.meas ac zd_re0 find re(V(p6)) at=1m
+.meas ac zd_im0 find im(V(p6)) at=1m
+.meas ac zd_re find re(V(p6)) at={GBWN/10}
+.meas ac zd_im find im(V(p6)) at={GBWN/10}
+.meas ac zc_re0 find re(V(p7)) at=1m
+.meas ac zc_im0 find im(V(p7)) at=1m
+.meas ac zc_re find re(V(p7)) at={GBWN/10}
+.meas ac zc_im find im(V(p7)) at={GBWN/10}
+.meas ac gbwn param {GBWN}
+.end

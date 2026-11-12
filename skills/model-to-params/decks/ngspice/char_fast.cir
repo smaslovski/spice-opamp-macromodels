@@ -1,0 +1,134 @@
+* <PART> characterization deck FAST (model-to-params skill rev 1.0)
+.include <vendor model file>
+* the part, with the pins in the order inp inn vcc vee out
+.subckt DUT inp inn vcc vee out
+XV inp inn vcc vee out <VENDOR_SUBCKT>
+.ends DUT
+* operating condition (datasheet): supplies, input common-mode voltage, load
+.param VCC=15 VEE=-15 VCM=0 RL=10k
+* nominal values from the datasheet; they set time scales and test levels only
+.param GBWN=1Meg SRN=0.5Meg VSTEP=10 VSS=50m OVR=0.2 W=3 ILOAD=1m
+* derived (do not edit)
+.param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
+.param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+
+Vcc vcc 0 {VCC}
+Vee vee 0 {VEE}
+Vmid mid 0 {VCM}
+* 1: follower at VCM, own supplies, no load: offset, bias currents, supply current
+Vcc1 vcc1 0 {VCC}
+Vee1 vee1 0 {VEE}
+Vp1 mid p1 0
+Vn1 o1 n1 0
+X1 p1 n1 vcc1 vee1 o1 DUT
+* 2: large step VCM-VSTEP/2 -> VCM+VSTEP/2 at TS and back at 3*TS: slew rates in
+*    an inverter (G = -1, 10 kohm), where input clamp diodes carry little current,
+*    and the follower jump in a follower
+Vin2 in2 0 PULSE({VCM-VSTEP/2} {VCM+VSTEP/2} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X2 in2 o2 vcc vee o2 DUT
+R2 o2 mid {RL}
+Rg2 in2 s2 10k
+Rf2 s2 o2i 10k
+X2i mid s2 vcc vee o2i DUT
+R2i o2i mid {RL}
+* 3: follower, small step of VSS
+Vin3 in3 0 PULSE({VCM-VSS/2} {VCM+VSS/2} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X3 in3 o3 vcc vee o3 DUT
+R3 o3 mid {RL}
+* 4, 5, 6: open loop, overdriven by +0.5 V, then -0.5 V from 2.5*TS:
+*    swing into RL (4), unloaded (5), and the output current into a short to VCM (6)
+Vd4 d4 mid PULSE(0.5 -0.5 {2.5*TS} {TS/100} {TS/100} {10*TS} {20*TS})
+X4 d4 mid vcc vee o4 DUT
+R4 o4 mid {RL}
+X5 d4 mid vcc vee o5 DUT
+X6 d4 mid vcc vee o6 DUT
+V6 o6 mid 0
+* 7, 8: follower stepped from VCM to OVR beyond the top (7) and bottom (8) rail at TS
+Vin7 in7 0 PULSE({VCM} {VCC+OVR} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X7 in7 o7 vcc vee o7 DUT
+R7 o7 mid {RL}
+Vin8 in8 0 PULSE({VCM} {VEE-OVR} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X8 in8 o8 vcc vee o8 DUT
+R8 o8 mid {RL}
+* 9, 10: VCL between the inputs through 100 ohm (9) and 1 kohm (10): input clamp
+Vc9 c9 mid {VCL}
+R9 c9 p9 100
+X9 p9 mid vcc vee o9 DUT
+R10 c9 p10 1k
+X10 p10 mid vcc vee o10 DUT
+
+.csparam xvcc={VCC} xvee={VEE} xvcm={VCM} rl={RL} ts={TS} vstep={VSTEP} vss={VSS} ovr={OVR} vcl={VCL}
+.control
+set noaskquit
+let tmax = ts/500
+let tstop = 5*ts
+tran $&tmax $&tstop 0 $&tmax
+let a = 0.5*ts
+let b = 0.9*ts
+let vo1 = v(o1)-v(mid)
+meas tran vos avg vo1 from=$&a to=$&b
+meas tran ibp avg i(vp1) from=$&a to=$&b
+meas tran ibn avg i(vn1) from=$&a to=$&b
+let iqv = -i(vcc1)
+meas tran iq avg iqv from=$&a to=$&b
+let l50 = xvcm
+let l85r = xvcm+0.35*vstep
+let l85f = xvcm-0.35*vstep
+meas tran t50r when v(o2)=$&l50 rise=1
+meas tran t85r when v(o2)=$&l85r rise=1
+let tdf = 2*ts
+meas tran t50f when v(o2)=$&l50 fall=1 td=$&tdf
+meas tran t85f when v(o2)=$&l85f fall=1 td=$&tdf
+meas tran t50fi when v(o2i)=$&l50 fall=1
+meas tran t85fi when v(o2i)=$&l85f fall=1
+meas tran t50ri when v(o2i)=$&l50 rise=1 td=$&tdf
+meas tran t85ri when v(o2i)=$&l85r rise=1 td=$&tdf
+let c = 2.5*ts
+let d = 2.9*ts
+let e = 4.5*ts
+let f = 4.9*ts
+let g = 3*ts
+meas tran vo2_lo avg v(o2) from=$&a to=$&b
+meas tran vo2_hi avg v(o2) from=$&c to=$&d
+meas tran ss_lo avg v(o3) from=$&a to=$&b
+meas tran ss_hi avg v(o3) from=$&c to=$&d
+meas tran ss_max max v(o3) from=$&ts to=$&g
+meas tran ss_min min v(o3) from=$&g to=$&tstop
+let c = 2*ts
+let d = 2.4*ts
+meas tran voh_rl avg v(o4) from=$&c to=$&d
+meas tran vol_rl avg v(o4) from=$&e to=$&f
+meas tran voh_nl avg v(o5) from=$&c to=$&d
+meas tran vol_nl avg v(o5) from=$&e to=$&f
+meas tran isrc avg i(v6) from=$&c to=$&d
+meas tran isnk avg i(v6) from=$&e to=$&f
+let l1 = xvcm-0.2*(xvcm-xvee)
+let l2 = xvcm-0.6*(xvcm-xvee)
+meas tran rt_t1 when v(o7)=$&l1 fall=1
+meas tran rt_t2 when v(o7)=$&l2 fall=1
+let d = 2.9*ts
+meas tran rt_end find v(o7) at=$&d
+let l1 = xvcm+0.2*(xvcc-xvcm)
+let l2 = xvcm+0.6*(xvcc-xvcm)
+meas tran rb_t1 when v(o8)=$&l1 rise=1
+meas tran rb_t2 when v(o8)=$&l2 rise=1
+meas tran rb_end find v(o8) at=$&d
+let v9 = v(p9)-v(mid)
+let i9 = (v(c9)-v(p9))/100
+let v10 = v(p10)-v(mid)
+let i10 = (v(c9)-v(p10))/1000
+meas tran vcl1 avg v9 from=$&a to=$&b
+meas tran icl1 avg i9 from=$&a to=$&b
+meas tran vcl2 avg v10 from=$&a to=$&b
+meas tran icl2 avg i10 from=$&a to=$&b
+print xvcc
+print xvee
+print xvcm
+print rl
+print ts
+print vstep
+print vss
+print ovr
+print vcl
+.endc
+.end

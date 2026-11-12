@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.5 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.5.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee outp outn vocm
 *   outp is the non-inverted output (in phase with inp), outn the inverted one.
@@ -231,8 +231,13 @@ Cic1 inp 0 {CIC}
 Cic2 inn 0 {CIC}
 Ibp  inp 0 DC {IB+IOS/2}
 Ibn  inn 0 DC {IB-IOS/2}
-Bibt1 inp 0 I = {DIBT}*0.5*(1+tanh((0.5*(V(inp)+V(inn))-V(vcc)+{VCMT})/{VKT}))
-Bibt2 inn 0 I = {DIBT}*0.5*(1+tanh((0.5*(V(inp)+V(inn))-V(vcc)+{VCMT})/{VKT}))
+* shared nodes, each computed once per iteration (fewer, smaller expressions:
+* every controlling node of a behavioural source costs a derivative tree)
+Bvc  nvc 0 V = 0.5*(V(inp)+V(inn))
+Bsq  nsq 0 V = 0.5*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+1e-4)
+Bcx  ncx 0 V = 0.5*(1+tanh((V(nvc)-V(vcc)+{VCMT})/{VKT}))
+Bibt1 inp 0 I = {DIBT}*V(ncx)
+Bibt2 inn 0 I = {DIBT}*V(ncx)
 Dp1  inp inn DIN
 Dp2  inn inp DIN
 .model DIN D(IS=1e-15 N={VCLMP/(VTN*log(1e-3/1e-15))} RS={RCLMP})
@@ -265,7 +270,7 @@ Gfn  0 inn nfn1 nfn2 {GFI}
 .model DFLKI D(IS=1e-14 N=1 KF={KFI} AF=1)
 
 * ---- CMRR and PSRR coupling into the DM input ----------------------------------
-Bcm  ncm0 0 V = 0.5*(V(inp)+V(inn))-{VCMN}
+Bcm  ncm0 0 V = V(nvc)-{VCMN}
 .param FCMV={FCMRR>0 ? FCMRR : 31.6*GBW/CMRR}
 Xcm  ncm0 ncm FDZCPL PARAMS: K={1/CMRR} FZ={FCMV}
 Bps1 nps1i 0 V = V(vcc)-{VCCN}
@@ -276,15 +281,26 @@ Xps1 nps1i nps1 FDZCPL PARAMS: K={1/PSRRP} FZ={FPSPV}
 Bps2 nps2i 0 V = V(vee)-{VEEN}
 Xps2 nps2i nps2 FDZCPL PARAMS: K={1/PSRRN} FZ={FPSNV}
 
-Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)
-+ +{DVOST}*0.5*(1+tanh((0.5*(V(inp)+V(inn))-V(vcc)+{VCMT})/{VKT}))
+Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)+{DVOST}*V(ncx)
 * input common-mode range window: the top edge uses the lower input, the bottom
 * edge the higher one (smooth min/max), so the stage works while one input is in
 * range; times 1 - J for each conducting reversal junction (see below)
-Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))+0.5*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+1e-4)-V(vee)-{ICMLO})/{VK}))
-+ *(1+tanh((V(vcc)-{ICMHI}-0.5*(V(inp)+V(inn))+0.5*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+1e-4))/{VK})),1e-6)
-+ *(1-{EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI})*{KJ})))*(1-{EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI})*{KJ})))
-+ *(1-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inp))*{KJ})))*(1-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inn))*{KJ})))
+.param EPH={PRHI>0 ? 1 : 0}
+.param EPL={PRLO>0 ? 1 : 0}
+.param KJ={0.5/VTN}            ; 1/(2*VT): logistic of thermal width
+* Input current: the same junction step, shifted by VT*ln(9) so that it is
+* 0.9*IPR where the output flips (J = 1/2) and IPR beyond.
+.param IPRV={IPR>0 ? IPR : IMAXV}
+.param DJ={VTN*log(9)}
+* junction functions of the reversal (0 when unused)
+Bjhp njhp 0 V = {EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI})*{KJ}))
+Bjhn njhn 0 V = {EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI})*{KJ}))
+Bjlp njlp 0 V = {EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inp))*{KJ}))
+Bjln njln 0 V = {EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inn))*{KJ}))
+* (the two edge factors stay in one source: as separate nodes they made a
+* transient with a 1 GH / 1 GF DC servo fail in tests/opamp_full_tests.cir)
+Bwin nwin 0 V = max(0.25*(1+tanh((V(nvc)+V(nsq)-V(vee)-{ICMLO})/{VK}))*(1+tanh((V(vcc)-{ICMHI}-V(nvc)+V(nsq))/{VK})),1e-6)
++ *(1-V(njhp))*(1-V(njhn))*(1-V(njlp))*(1-V(njln))
 
 * ---- phase reversal through an input junction (PRHI, PRLO) ---------------------
 * In a bipolar or JFET input pair a junction of the input device becomes forward
@@ -293,8 +309,8 @@ Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))+0.5*sqrt((V(inp)-V(inn))*(
 * bottom). Its current flows from the input pin straight into the high-impedance
 * node of the first stage, in the direction opposite to the normal signal, and
 * the saturated device no longer works as an amplifier. J (0..1) is the
-* conduction of each junction (written out where it is used, in Bwin and Bpr,
-* so that it costs no nodes): a logistic step of thermal width centred VPRHI
+* conduction of each junction (nodes njhp, njhn, njlp, njln above, used by Bwin,
+* Bprp, Bprn and Bpr): a logistic step of thermal width centred VPRHI
 * below vcc (VPRLO above vee). At full conduction the input pin carries IPR
 * (into the pin at the top, out of it at the bottom), the stage gm is switched
 * off, and PRHI*IMAX (PRLO*IMAX) is injected into the gain node: the output runs
@@ -302,15 +318,9 @@ Bwin nwin 0 V = max(0.25*(1+tanh((0.5*(V(inp)+V(inn))+0.5*sqrt((V(inp)-V(inn))*(
 * The output flips at half conduction, where the input current is 0.9*IPR, so
 * a source resistance RS prevents the reversal while 0.9*RS*IPR exceeds the
 * overdrive. IPR is about the tail current of the input pair (0 = SR*1pF).
-.param EPH={PRHI>0 ? 1 : 0}
-.param EPL={PRLO>0 ? 1 : 0}
-.param KJ={0.5/VTN}            ; 1/(2*VT): logistic of thermal width
-* Input current: the same junction step, shifted by VT*ln(9) so that it is
-* 0.9*IPR where the output flips (J = 1/2) and IPR beyond.
-.param IPRV={IPR>0 ? IPR : IMAXV}
-.param DJ={VTN*log(9)}
-Bprp inp 0 I = {IPRV}*({EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI+DJ})*{KJ}))-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO+DJ}-V(inp))*{KJ})))
-Bprn inn 0 I = {IPRV}*({EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI+DJ})*{KJ}))-{EPL}*0.5*(1+tanh((V(vee)+{VPRLO+DJ}-V(inn))*{KJ})))
+* pin current: the junction logistic shifted by DJ = VT*ln(9), i.e. 9J/(1+8J)
+Bprp inp 0 I = {IPRV}*(9*V(njhp)/(1+8*V(njhp))-9*V(njlp)/(1+8*V(njlp)))
+Bprn inn 0 I = {IPRV}*(9*V(njhn)/(1+8*V(njhn))-9*V(njln)/(1+8*V(njln)))
 * Injected current: IMAX*PR*J^(1+L), L = max(log2(PR),0). For PR >= 1 it
 * equals the collapsing stage current IMAX*(1-J) at J = 1/2 whatever PR is, so
 * the output flips at J = 1/2; at full conduction it is PR*IMAX.
@@ -318,10 +328,7 @@ Bprn inn 0 I = {IPRV}*({EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI+DJ})*{KJ}))-{EPL}
 .param LPL={max(log(max(PRLO,1e-3))/log(2),0)}
 .param AH={IMAXV*PRHI}
 .param AL={IMAXV*PRLO}
-Bpr  0 n1 I = {AH}*(pwr({EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI})*{KJ})),{1+LPH})
-+ -pwr({EPH}*0.5*(1+tanh((V(inp)-V(vcc)+{VPRHI})*{KJ})),{1+LPH}))
-+ +{AL}*(pwr({EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inp))*{KJ})),{1+LPL})
-+ -pwr({EPL}*0.5*(1+tanh((V(vee)+{VPRLO}-V(inn))*{KJ})),{1+LPL}))
+Bpr  0 n1 I = {AH}*(pwr(V(njhn),{1+LPH})-pwr(V(njhp),{1+LPH}))+{AL}*(pwr(V(njlp),{1+LPL})-pwr(V(njln),{1+LPL}))
 
 * ---- input-pair tail capacitance (KJUMP) ----------------------------------------
 * The tail (common) node of the input pair follows the higher (KJUMP > 0,
@@ -337,7 +344,7 @@ Bpr  0 n1 I = {AH}*(pwr({EPH}*0.5*(1+tanh((V(inn)-V(vcc)+{VPRHI})*{KJ})),{1+LPH}
 * while the output slews); small-signal analyses are unaffected.
 .param TPL={KJUMP<0 ? -1 : 1}
 .param KTC={max(abs(KJUMP),1e-12)}
-Btl  ntl0 0 V = 0.5*(V(inp)+V(inn))+{0.5*TPL}*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+2.5e-3)
+Btl  ntl0 0 V = V(nvc)+{0.5*TPL}*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+2.5e-3)
 * Ctl has a noiseless series resistance (time constant 1/(2*pi*FP3V)): the
 * sensed current is then a smooth state, not the step-to-step ringing that
 * trapezoidal integration gives in a capacitor driven by an ideal source

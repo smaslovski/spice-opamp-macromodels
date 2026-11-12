@@ -18,8 +18,8 @@ derived, and which stay at their defaults.
 
 ## Version and updates
 
-- Skill revision: **1.15** (2026-11-11)
-- For model version: **1.5** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
+- Skill revision: **1.16** (2026-11-11)
+- For model version: **1.5** or **1.5.1** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
   in the header of `opamp_full.lib` / `fdopamp_full.lib`)
 - Parameters new in model 1.5 (`FPSRRP`, `FPSRRN`, `PRHI`, `PRLO`, `VPRHI`,
   `VPRLO`, `IPR`, `VCMT`, `VKT`, `DVOST`, `DIBT`, `KBAL`) are rejected by older

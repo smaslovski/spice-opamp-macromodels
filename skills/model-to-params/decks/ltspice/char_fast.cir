@@ -1,0 +1,105 @@
+* <PART> characterization deck FAST (model-to-params skill rev 1.0)
+.include <vendor model file>
+* the part, with the pins in the order inp inn vcc vee out
+.subckt DUT inp inn vcc vee out
+XV inp inn vcc vee out <VENDOR_SUBCKT>
+.ends DUT
+* operating condition (datasheet): supplies, input common-mode voltage, load
+.param VCC=15 VEE=-15 VCM=0 RL=10k
+* nominal values from the datasheet; they set time scales and test levels only
+.param GBWN=1Meg SRN=0.5Meg VSTEP=10 VSS=50m OVR=0.2 W=3 ILOAD=1m
+* derived (do not edit)
+.param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
+.param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+
+Vcc vcc 0 {VCC}
+Vee vee 0 {VEE}
+Vmid mid 0 {VCM}
+* 1: follower at VCM, own supplies, no load: offset, bias currents, supply current
+Vcc1 vcc1 0 {VCC}
+Vee1 vee1 0 {VEE}
+Vp1 mid p1 0
+Vn1 o1 n1 0
+X1 p1 n1 vcc1 vee1 o1 DUT
+* 2: large step VCM-VSTEP/2 -> VCM+VSTEP/2 at TS and back at 3*TS: slew rates in
+*    an inverter (G = -1, 10 kohm), where input clamp diodes carry little current,
+*    and the follower jump in a follower
+Vin2 in2 0 PULSE({VCM-VSTEP/2} {VCM+VSTEP/2} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X2 in2 o2 vcc vee o2 DUT
+R2 o2 mid {RL}
+Rg2 in2 s2 10k
+Rf2 s2 o2i 10k
+X2i mid s2 vcc vee o2i DUT
+R2i o2i mid {RL}
+* 3: follower, small step of VSS
+Vin3 in3 0 PULSE({VCM-VSS/2} {VCM+VSS/2} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X3 in3 o3 vcc vee o3 DUT
+R3 o3 mid {RL}
+* 4, 5, 6: open loop, overdriven by +0.5 V, then -0.5 V from 2.5*TS:
+*    swing into RL (4), unloaded (5), and the output current into a short to VCM (6)
+Vd4 d4 mid PULSE(0.5 -0.5 {2.5*TS} {TS/100} {TS/100} {10*TS} {20*TS})
+X4 d4 mid vcc vee o4 DUT
+R4 o4 mid {RL}
+X5 d4 mid vcc vee o5 DUT
+X6 d4 mid vcc vee o6 DUT
+V6 o6 mid 0
+* 7, 8: follower stepped from VCM to OVR beyond the top (7) and bottom (8) rail at TS
+Vin7 in7 0 PULSE({VCM} {VCC+OVR} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X7 in7 o7 vcc vee o7 DUT
+R7 o7 mid {RL}
+Vin8 in8 0 PULSE({VCM} {VEE-OVR} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+X8 in8 o8 vcc vee o8 DUT
+R8 o8 mid {RL}
+* 9, 10: VCL between the inputs through 100 ohm (9) and 1 kohm (10): input clamp
+Vc9 c9 mid {VCL}
+R9 c9 p9 100
+X9 p9 mid vcc vee o9 DUT
+R10 c9 p10 1k
+X10 p10 mid vcc vee o10 DUT
+
+.options plotwinsize=0
+.tran 0 {5*TS} 0 {TS/500}
+.meas tran vos avg V(o1)-V(mid) from={0.5*TS} to={0.9*TS}
+.meas tran ibp avg I(Vp1) from={0.5*TS} to={0.9*TS}
+.meas tran ibn avg I(Vn1) from={0.5*TS} to={0.9*TS}
+.meas tran iq avg -I(Vcc1) from={0.5*TS} to={0.9*TS}
+.meas tran t50r when V(o2)={VCM} rise=1
+.meas tran t85r when V(o2)={VCM+0.35*VSTEP} rise=1
+.meas tran t50f when V(o2)={VCM} td={2*TS} fall=1
+.meas tran t85f when V(o2)={VCM-0.35*VSTEP} td={2*TS} fall=1
+.meas tran t50fi when V(o2i)={VCM} fall=1
+.meas tran t85fi when V(o2i)={VCM-0.35*VSTEP} fall=1
+.meas tran t50ri when V(o2i)={VCM} td={2*TS} rise=1
+.meas tran t85ri when V(o2i)={VCM+0.35*VSTEP} td={2*TS} rise=1
+.meas tran vo2_lo avg V(o2) from={0.5*TS} to={0.9*TS}
+.meas tran vo2_hi avg V(o2) from={2.5*TS} to={2.9*TS}
+.meas tran ss_lo avg V(o3) from={0.5*TS} to={0.9*TS}
+.meas tran ss_hi avg V(o3) from={2.5*TS} to={2.9*TS}
+.meas tran ss_max max V(o3) from={TS} to={3*TS}
+.meas tran ss_min min V(o3) from={3*TS} to={5*TS}
+.meas tran voh_rl avg V(o4) from={2*TS} to={2.4*TS}
+.meas tran vol_rl avg V(o4) from={4.5*TS} to={4.9*TS}
+.meas tran voh_nl avg V(o5) from={2*TS} to={2.4*TS}
+.meas tran vol_nl avg V(o5) from={4.5*TS} to={4.9*TS}
+.meas tran isrc avg I(V6) from={2*TS} to={2.4*TS}
+.meas tran isnk avg I(V6) from={4.5*TS} to={4.9*TS}
+.meas tran rt_t1 when V(o7)={VCM-0.2*(VCM-VEE)} fall=1
+.meas tran rt_t2 when V(o7)={VCM-0.6*(VCM-VEE)} fall=1
+.meas tran rt_end find V(o7) at={2.9*TS}
+.meas tran rb_t1 when V(o8)={VCM+0.2*(VCC-VCM)} rise=1
+.meas tran rb_t2 when V(o8)={VCM+0.6*(VCC-VCM)} rise=1
+.meas tran rb_end find V(o8) at={2.9*TS}
+.meas tran vcl1 avg V(p9)-V(mid) from={0.5*TS} to={0.9*TS}
+.meas tran icl1 avg (V(c9)-V(p9))/100 from={0.5*TS} to={0.9*TS}
+.meas tran vcl2 avg V(p10)-V(mid) from={0.5*TS} to={0.9*TS}
+.meas tran icl2 avg (V(c9)-V(p10))/1000 from={0.5*TS} to={0.9*TS}
+.meas tran vcc param {VCC}
+.meas tran vee param {VEE}
+.meas tran vcm param {VCM}
+.meas tran rl param {RL}
+.meas tran ts param {TS}
+.meas tran vstep param {VSTEP}
+.meas tran vss param {VSS}
+.meas tran ovr param {OVR}
+.meas tran vcl param {VCL}
+.end

@@ -1,0 +1,61 @@
+* <PART> characterization deck SLOW (model-to-params skill rev 1.0)
+.LIB <vendor model file>
+* the part, with the pins in the order inp inn vcc vee out
+.subckt DUT inp inn vcc vee out
+XV inp inn vcc vee out <VENDOR_SUBCKT>
+.ends DUT
+* operating condition (datasheet): supplies, input common-mode voltage, load
+.param VCC=15 VEE=-15 VCM=0 RL=10k
+* nominal values from the datasheet; they set time scales and test levels only
+.param GBWN=1Meg SRN=0.5Meg VSTEP=10 VSS=50m OVR=0.2 W=3 ILOAD=1m
+* derived (do not edit)
+.param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
+.param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+
+Vcc vcc 0 {VCC}
+Vee vee 0 {VEE}
+Vmid mid 0 {VCM}
+* Pairs of instances whose outputs an ideal level shifter holds at VCM+VSH (a)
+* and VCM-VSH (b) while both inputs sit at the input voltage: the difference of
+* their differential inputs is 2*VSH/gain, so its ratio to the value at VCM
+* gives the relative gain of the input stage at that common-mode voltage.
+* m: at VCM
+Xam pam nam vcc vee oam DUT
+Vam pam mid 0
+Eam nam oam vshm 0 1
+Xbm pbm nbm vcc vee obm DUT
+Vbm pbm mid 0
+Ebm nbm obm vshp 0 1
+Vshp vshp 0 {VSH}
+Vshm vshm 0 {-VSH}
+* t: slow ramp from VCC-W to VCC+OVR
+Vint int 0 PWL(0 {VCC-W} {TR} {VCC+OVR})
+Xat pat nat vcc vee oat DUT
+Vat int pat 0
+Eat nat oat int mshp 1
+Xbt pbt nbt vcc vee obt DUT
+Vbt int pbt 0
+Ebt nbt obt int mshm 1
+Vmshp mshp 0 {VCM+VSH}
+Vmshm mshm 0 {VCM-VSH}
+* b: slow ramp from VEE+W to VEE-OVR
+Vinb inb 0 PWL(0 {VEE+W} {TR} {VEE-OVR})
+Xab pab nab vcc vee oab DUT
+Vab inb pab 0
+Eab nab oab inb mshp 1
+Xbb pbb nbb vcc vee obb DUT
+Vbb inb pbb 0
+Ebb nbb obb inb mshm 1
+* followers into RL on the same ramps: tracking error, reversal, input current
+Vft int pft 0
+Xft pft oft vcc vee oft DUT
+Rft oft mid {RL}
+Vfb inb pfb 0
+Xfb pfb ofb vcc vee ofb DUT
+Rfb ofb mid {RL}
+
+.OPTIONS NUMDGT=8 NOPAGE
+.TRAN {TR/400} {TR} 0 {TR/4000}
+.PRINT TRAN V(int) V(pam,nam) V(pbm,nbm) V(pat,nat) V(pbt,nbt) V(oft) I(Vft)
+.PRINT TRAN V(inb) V(pab,nab) V(pbb,nbb) V(ofb) I(Vfb)
+.end

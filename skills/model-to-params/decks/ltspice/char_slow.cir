@@ -1,0 +1,98 @@
+* <PART> characterization deck SLOW (model-to-params skill rev 1.0)
+.include <vendor model file>
+* the part, with the pins in the order inp inn vcc vee out
+.subckt DUT inp inn vcc vee out
+XV inp inn vcc vee out <VENDOR_SUBCKT>
+.ends DUT
+* operating condition (datasheet): supplies, input common-mode voltage, load
+.param VCC=15 VEE=-15 VCM=0 RL=10k
+* nominal values from the datasheet; they set time scales and test levels only
+.param GBWN=1Meg SRN=0.5Meg VSTEP=10 VSS=50m OVR=0.2 W=3 ILOAD=1m
+* derived (do not edit)
+.param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
+.param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+
+Vcc vcc 0 {VCC}
+Vee vee 0 {VEE}
+Vmid mid 0 {VCM}
+* Pairs of instances whose outputs an ideal level shifter holds at VCM+VSH (a)
+* and VCM-VSH (b) while both inputs sit at the input voltage: the difference of
+* their differential inputs is 2*VSH/gain, so its ratio to the value at VCM
+* gives the relative gain of the input stage at that common-mode voltage.
+* m: at VCM
+Xam pam nam vcc vee oam DUT
+Vam pam mid 0
+Eam nam oam vshm 0 1
+Xbm pbm nbm vcc vee obm DUT
+Vbm pbm mid 0
+Ebm nbm obm vshp 0 1
+Vshp vshp 0 {VSH}
+Vshm vshm 0 {-VSH}
+* t: slow ramp from VCC-W to VCC+OVR
+Vint int 0 PWL(0 {VCC-W} {TR} {VCC+OVR})
+Xat pat nat vcc vee oat DUT
+Vat int pat 0
+Eat nat oat int mshp 1
+Xbt pbt nbt vcc vee obt DUT
+Vbt int pbt 0
+Ebt nbt obt int mshm 1
+Vmshp mshp 0 {VCM+VSH}
+Vmshm mshm 0 {VCM-VSH}
+* b: slow ramp from VEE+W to VEE-OVR
+Vinb inb 0 PWL(0 {VEE+W} {TR} {VEE-OVR})
+Xab pab nab vcc vee oab DUT
+Vab inb pab 0
+Eab nab oab inb mshp 1
+Xbb pbb nbb vcc vee obb DUT
+Vbb inb pbb 0
+Ebb nbb obb inb mshm 1
+* followers into RL on the same ramps: tracking error, reversal, input current
+Vft int pft 0
+Xft pft oft vcc vee oft DUT
+Rft oft mid {RL}
+Vfb inb pfb 0
+Xfb pfb ofb vcc vee ofb DUT
+Rfb ofb mid {RL}
+
+.options plotwinsize=0
+.tran 0 {TR} 0 {TR/4000}
+.meas tran dmid avg V(pam)-V(nam)-V(pbm)+V(nbm) from=0 to={TR}
+.meas tran dt0 find V(pat)-V(nat)-V(pbt)+V(nbt) at=0
+.meas tran db0 find V(pab)-V(nab)-V(pbb)+V(nbb) at=0
+.meas tran vw5t find V(int) when V(pat)-V(nat)-V(pbt)+V(nbt)=2*dmid rise=1
+.meas tran vwqt find V(int) when V(pat)-V(nat)-V(pbt)+V(nbt)=4*dmid rise=1
+.meas tran vw5b find V(inb) when V(pab)-V(nab)-V(pbb)+V(nbb)=2*dmid rise=1
+.meas tran vwqb find V(inb) when V(pab)-V(nab)-V(pbb)+V(nbb)=4*dmid rise=1
+.meas tran eft0 find V(int)-V(oft) at=0
+.meas tran efb0 find V(inb)-V(ofb) at=0
+.meas tran vf1t find V(int) when V(int)-V(oft)=eft0+0.01 rise=1
+.meas tran of1t find V(oft) when V(int)-V(oft)=eft0+0.01 rise=1
+.meas tran vf2t find V(int) when V(int)-V(oft)=eft0+0.1 rise=1
+.meas tran of2t find V(oft) when V(int)-V(oft)=eft0+0.1 rise=1
+.meas tran vf1b find V(inb) when V(inb)-V(ofb)=efb0-0.01 fall=1
+.meas tran of1b find V(ofb) when V(inb)-V(ofb)=efb0-0.01 fall=1
+.meas tran vf2b find V(inb) when V(inb)-V(ofb)=efb0-0.1 fall=1
+.meas tran of2b find V(ofb) when V(inb)-V(ofb)=efb0-0.1 fall=1
+.meas tran vstopt max V(oft) from=0 to={TR}
+.meas tran vendt find V(oft) at={TR}
+.meas tran it0 find I(Vft) at=0
+.meas tran iendt find I(Vft) at={TR}
+.meas tran vipt find V(int) when I(Vft)=it0+0.9*(iendt-it0) rise=1
+.meas tran vflt find V(int) when V(oft)=vstopt-0.05*(vstopt-{VCM}) fall=1
+.meas tran iflt find I(Vft) when V(oft)=vstopt-0.05*(vstopt-{VCM}) fall=1
+.meas tran vstopb min V(ofb) from=0 to={TR}
+.meas tran vendb find V(ofb) at={TR}
+.meas tran ib0 find I(Vfb) at=0
+.meas tran iendb find I(Vfb) at={TR}
+.meas tran vipb find V(inb) when I(Vfb)=ib0+0.9*(iendb-ib0) fall=1
+.meas tran vflb find V(inb) when V(ofb)=vstopb+0.05*({VCM}-vstopb) rise=1
+.meas tran iflb find I(Vfb) when V(ofb)=vstopb+0.05*({VCM}-vstopb) rise=1
+.meas tran vcc param {VCC}
+.meas tran vee param {VEE}
+.meas tran vcm param {VCM}
+.meas tran rl param {RL}
+.meas tran tr param {TR}
+.meas tran w param {W}
+.meas tran ovr param {OVR}
+.meas tran vsh param {VSH}
+.end

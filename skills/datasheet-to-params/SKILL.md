@@ -18,23 +18,27 @@ derived, and which stay at their defaults.
 
 ## Version and updates
 
-- Skill revision: **1.18** (2026-11-15)
-- For model version: **1.6** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
+- Skill revision: **1.19** (2026-11-15)
+- For model version: **1.7** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
   in the header of `opamp_full.lib` / `fdopamp_full.lib`)
+- Model 1.7: `CMRR`, `PSRR`, `PSRRP`, `PSRRN` are signed (see their rows); enter
+  datasheet values as positive. The defaults are `CMRR` = −31.6k, `PSRR` = 31.6k
+  (FDA: 31.6k, 10k). For a 1.6 library the same positive values work; if you
+  keep the defaults there, write nothing (1.6 defaults to 0 = not given).
 - Model 1.6 has no ground node, and its supply and common-mode rejection follows
-  the rules of a part without a ground pin: `CMRR`, `PSRR`, `PSRRP`, `PSRRN` all
-  default to 0 (= not given) and only two of them are used exactly (see their
-  rows). `PSRR` (both supplies moved apart, the usual single datasheet value),
-  `KREF` and `ROUTDC` (DC output resistance; `A0` is then the unloaded gain) are
-  new. For a 1.5.x library, map a single PSRR to `PSRRP` = `PSRRN`, give `CMRR` as
-  well, use the loaded A_OL for `A0`, and leave out `PSRR`, `KREF` and `ROUTDC`.
+  the rules of a part without a ground pin: only two of `CMRR`, `PSRR`, `PSRRP`,
+  `PSRRN` are used exactly (see their rows). `PSRR` (both supplies moved apart,
+  the usual single datasheet value), `KREF` and `ROUTDC` (DC output resistance;
+  `A0` is then the unloaded gain) are new in 1.6. For a 1.5.x library, map a
+  single PSRR to `PSRRP` = `PSRRN`, give `CMRR` as well, use the loaded A_OL for
+  `A0`, and leave out `PSRR`, `KREF` and `ROUTDC`.
 - Parameters new in model 1.5 (`FPSRRP`, `FPSRRN`, `PRHI`, `PRLO`, `VPRHI`,
   `VPRLO`, `IPR`, `VCMT`, `VKT`, `DVOST`, `DIBT`, `KBAL`) are rejected by older
   libraries. If the user has an older version, leave them out of the instance line
   and give their values in the notes.
 - Since model 1.5, `FP2` and `FP3` default to 0, which scales them with `GBW`, and
   `FPCM2` defaults to 0 = 4·`GBWCM` (see their rows). (In 1.5.x `FCMRR` and
-  `FPSRR` did the same; in 1.6, 0 means "not given".) Older
+  `FPSRR` did the same; since 1.6, 0 means "not given".) Older
   libraries have fixed defaults (3Meg, 10Meg, 200, 100 / 300Meg, 1G, 100k, 100k;
   FPCM2 200Meg) that suit only the default GBW and GBWCM: for an older library,
   write the scaled values explicitly whenever `GBW` or `GBWCM` differs from the
@@ -182,14 +186,14 @@ as a cross-check of a GBW read from a plot.
 
 | Param | Unit | Meaning | Defaults | How to get it |
 |---|---|---|---|---|
-| `CMRR` | ratio | DC CMRR; 0 = not given | 0 / 0 | "Common-mode rejection ratio" (dB → ratio; µV/V → ratio). |
-| `PSRR` | ratio | DC PSRR with both supplies moved apart, per volt of each supply; 0 = not given | 0 / 0 | The usual single "supply voltage rejection ratio" (k_SVR, PSRR) measured with ±V_S varied together, e.g. "V_S = ±2.5 V to ±15 V". In µV/V: ratio = 10⁶/(µV/V). If the datasheet defines it per volt of the total supply span (V_CC − V_EE) rather than per volt of each supply, divide the ratio by 2 and say so; if it does not say, use the value directly and say so. |
-| `PSRRP`, `PSRRN` | ratio | DC rejection of the positive / negative supply **alone**; 0 = not given | 0, 0 / 0, 0 | Only if the datasheet gives separate +PSRR and −PSRR values (each supply varied with the other fixed). Do not copy a single PSRR into both: use `PSRR`. |
-| | | **Rules of the model** (a part without a ground pin). The errors per volt of vcc (T_P), vee (T_N) and input common mode (T_C) obey T_P + T_N + T_C = 1/A0 at DC (0 for the FDA), and PSRR = 1/\|T_P − T_N\|. So only two of these four are independent. The model uses the first two given in the order `PSRRP`, `PSRRN`, `CMRR`, `PSRR` exactly and derives the others; with fewer than two, it adds `CMRR` = 31.6k and then `PSRR` = 31.6k (FDA: 10k). The same holds for the slopes above the corners. | | Give the values the datasheet has (all of them; the model sorts them out), then run `python3 tools/rejection.py <params>` if you can (`--fda` for the FDA): it prints what the model makes of them and flags a given value that is not honoured (CONFLICT). In the notes, report the derived values and any conflict. Typical case, a datasheet with `CMRR` and one `PSRR`: both are honoured, and PSRR+ and PSRR− come out near PSRR, differing by the CMRR term. With `PSRRP`, `PSRRN` and `CMRR` all given, `CMRR` is derived from the two PSRRs and may differ from the table. |
+| `CMRR` | ratio | DC CMRR, signed (see "Signs" below); 0 = not given | −31.6k / 31.6k | "Common-mode rejection ratio" (dB → ratio; µV/V → ratio), entered as **positive**. |
+| `PSRR` | ratio | DC PSRR with both supplies moved apart, per volt of each supply, signed; 0 = not given | 31.6k / 10k | The usual single "supply voltage rejection ratio" (k_SVR, PSRR) measured with ±V_S varied together, e.g. "V_S = ±2.5 V to ±15 V". In µV/V: ratio = 10⁶/(µV/V). If the datasheet defines it per volt of the total supply span (V_CC − V_EE) rather than per volt of each supply, divide the ratio by 2 and say so; if it does not say, use the value directly and say so. |
+| `PSRRP`, `PSRRN` | ratio | DC rejection of the positive / negative supply **alone**, signed; 0 = not given | 0, 0 / 0, 0 | Only if the datasheet gives separate +PSRR and −PSRR values (each supply varied with the other fixed), entered as positive. Do not copy a single PSRR into both: use `PSRR`. |
+| | | **Rules of the model** (a part without a ground pin). The errors per volt of vcc (T_P), vee (T_N) and input common mode (T_C) obey T_P + T_N + T_C = 1/A0 at DC (0 for the FDA), and PSRR = 1/(T_P − T_N), each T = 1/value with its sign. So only two of these four are independent. The model uses the first two given in the order `PSRRP`, `PSRRN`, `CMRR`, `PSRR` exactly (the defaults of `CMRR` and `PSRR` count as given) and derives the others. The same holds for the slopes above the corners, whose signs the model sets itself. **Signs:** a positive value means that a rise of that supply (of the input common mode; for `PSRR`, of both supplies apart) moves the output like a positive `VOS`. In a real part the DC sign is set by device mismatch: it differs from unit to unit and can change with temperature, so a datasheet cannot give it. Do not guess it: enter magnitudes as positive (as for `VOS`), unless a typical-unit plot of offset vs common-mode voltage or vs supply voltage shows the slope, and say which you did. To bracket the spread, the user can flip signs: equal signs of `PSRRP` and `PSRRN` give the worst derived CMRR, opposite signs the best. | | | Give the values the datasheet has (all of them; the model sorts them out), then run `python3 tools/rejection.py <params>` if you can (`--fda` for the FDA): it prints what the model makes of them and flags a given value that is not honoured (CONFLICT). In the notes, report the derived values and any conflict. Typical case, a datasheet with `CMRR` and one `PSRR`: both are honoured, and PSRR+ and PSRR− come out near PSRR, differing by the CMRR term. With `PSRRP`, `PSRRN` and `CMRR` all given, `CMRR` is derived from the two PSRRs and may differ from the table. |
 | `FCMRR` | Hz | CMRR falls at 20 dB/decade above this; 0 = not given | 0 / 0 | No CMRR plot: leave 0. Otherwise, from the CMRR vs frequency plot. Most robust: take one point (f_x, CMRR_x in dB) on the sloped part, one or two decades above the bend (curves often steepen further up, where other poles act), and compute FCMRR = f_x · 10^((CMRR_x − CMRR_DC)/20), where CMRR_DC is the value you set for `CMRR` (then the model's asymptote passes through the plotted point). Read a second point one decade away and check that the two differ by about 20 dB; if not, you are on the wrong curve or misreading the axis. If the check still fails after re-reading, do not choose a value between your estimates: use the point nearest the bend, mark it low confidence, and give the other estimate in the notes. If the plot's low-frequency level differs from the table value, say so. Cross-check with the frequency where the curve is 3 dB below its DC value. Then run sanity check 12 (CMRR left at `GBW`). |
 | `FPSRR` | Hz | corner of `PSRR`, and of PSRR+/PSRR− when `FPSRRP`/`FPSRRN` are 0; 0 = not given | 0 / 0 | No PSRR plot: leave 0 (the model then takes the coupling through its compensation, as in a real part, `OPAMP_FULL`; FDA: corners at 10⁻³·`GBW`). Otherwise from the PSRR vs frequency plot, with the same formula as FCMRR. A slope is used only for a quantity whose DC value is given. |
 | `FPSRRP`, `FPSRRN` | Hz | separate corners of PSRR+ and PSRR− | 0, 0 / 0, 0 | If the plot shows separate +PSRR and −PSRR curves, set each from its own curve (same formula, each with its own DC value; give `PSRRP`, `PSRRN` too). |
-| `KREF` | – | where the gain stages (the CM loop of the FDA) are referred: vee + KREF·(vcc − vee) | 0.5 / 0.5 | Keep 0.5. The supply it leans to couples through the compensation as 1/A(f); the specified rejection totals do not depend on it. |
+| `KREF` | – | where the gain stages (the CM loop of the FDA) are referred: vee + KREF·(vcc − vee) | 0.5 / 0.5 | The supply it leans to couples through the compensation as 1/A(f) (above the corners and with no PSRR plot, the PSRR of that supply falls with the open-loop gain); the specified rejection totals do not depend on it. If the simplified schematic shows the compensated gain stage (the common-emitter or common-source driver with the Miller capacitor) working from V−, use 0; from V+, use 1 (say which transistor). Otherwise keep 0.5. FDA: keep 0.5. |
 | `VCCN`, `VEEN` | V | nominal supplies the PSRR is referred to | 15, −15 / 5, −5 | The supply of your chosen operating condition. Single supply: VEEN = 0. |
 | `VCMN` | V | input CM voltage at which VOS is specified | mid-supply | Only if the test condition says so (e.g. "V_CM = 0 V" on a single supply, or "V_CM = V_S/2"). Otherwise omit (= mid-supply). |
 
@@ -221,7 +225,7 @@ as a cross-check of a GBW read from a plot.
 
 | Param | Unit | Meaning | Defaults | How to get it |
 |---|---|---|---|---|
-| `ROUTDC` | Ω | additional open-loop output resistance at DC (falls away above f_d = GBW/A0) | 0 / 0 | Only if the datasheet supports it: A_OL at two loads R₁, R₂ (common for CMOS parts) gives R = ROUT + ROUTDC from A₁/A₂ = R₁(R₂ + R)/(R₂(R₁ + R)) (A₁ at R₁, A₂ at R₂), i.e. R = R₁R₂(A₂ − A₁)/(A₁R₂ − A₂R₁) with linear gains; or an open-loop Z_out plot that rises toward DC (ROUTDC = Z_out at low frequency − ROUT). Otherwise leave 0 (model 1.6; not in older libraries). |
+| `ROUTDC` | Ω | additional open-loop output resistance at DC (falls away above f_d = GBW/A0) | 0 / 0 | Only if the datasheet supports it: A_OL at two loads R₁, R₂ (common for CMOS parts) gives R = ROUT + ROUTDC from A₁/A₂ = R₁(R₂ + R)/(R₂(R₁ + R)) (A₁ at R₁, A₂ at R₂), i.e. R = R₁R₂(A₂ − A₁)/(A₁R₂ − A₂R₁) with linear gains; or an open-loop Z_out plot that rises toward DC (ROUTDC = Z_out at low frequency − ROUT). Otherwise leave 0 (model 1.6 and later; not in older libraries). |
 | `ROUT` | Ω | open-loop output resistance | 75 / 10 | "Open-loop output impedance/resistance" (r_o, Z_O), or the flat part of the open-loop Z_out plot. **Not** the closed-loop output impedance. Use r_o directly. (With `VXO` > 0 the model doubles the small-signal ROUT at idle; that is a model feature, not a reason to halve r_o.) |
 | `COUT` | F | output capacitance (half to each rail) | 3p / 1p | Rarely given: keep the default. |
 | `ISRC`, `ISNK` | A | maximum source / sink current | 25m / 50m | "Short-circuit output current" (I_SC, I_OS), source and sink separately if given. |
@@ -290,8 +294,9 @@ results.
    A follower pulse plot should show slopes of about `SR·RL/(RL+ROUT)`.
 3. `ICCQ` is per amplifier.
 4. `VHD + VLD` < V_CC − V_EE, and `ICMHI + ICMLO` < V_CC − V_EE.
-5. `CMRR`, `PSRR`, `PSRRP`, `PSRRN` are ratios (> 1), not dB; a single datasheet
-   PSRR goes into `PSRR`, not into `PSRRP` and `PSRRN`.
+5. `CMRR`, `PSRR`, `PSRRP`, `PSRRN` are ratios (magnitude > 1), not dB, and
+   positive unless a plot gives the sign; a single datasheet PSRR goes into
+   `PSRR`, not into `PSRRP` and `PSRRN`.
 6. `IB` sign matches the input type.
 7. Noise: `ENOISE` in V/√Hz (e.g. `9n`, not `9`), `INOISE` in A/√Hz.
 8. For each value converted from a plot, give the reading uncertainty (e.g. ±10 %).
@@ -301,7 +306,7 @@ results.
 10. Redo each unit conversion once more against the copied datasheet row.
 11. Compare each extracted value with the plausibility range of the part's class;
     re-check any value far outside it.
-12. CMRR left at the unity-gain frequency: `CMRR·FCMRR/GBW` (with `FCMRR` set; 0 is
+12. CMRR left at the unity-gain frequency: `|CMRR|·FCMRR/GBW` (with `FCMRR` set; 0 is
     always fine) should be at least about 3 (10 dB), comfortably 10 (20 dB). The
     model's CMRR error source is in series with the input and grows at 20 dB/decade
     above `FCMRR`, so below about 3 a voltage follower's step response rings

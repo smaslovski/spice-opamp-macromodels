@@ -57,12 +57,13 @@ overload and saturation behaviour.
 
 ### Design choices worth knowing
 - **No ground node.** No element of either model connects to node 0: pin currents return to `vcc` or `vee`, and internal voltages are referred to the pins (the gain stages to `nref = vee + KREF·(vcc − vee)`). As with a real part, the results do not depend on which node of the circuit is grounded, and floating supplies work (tests 18 of `opamp_full_tests.cir` and 11 of `fdopamp_full_tests.cir`: a floating follower or gain stage gives no output when the whole circuit is driven against ground, or lifted by 100 V). This is the “far ground” problem of the classic Boyle macromodel (S. Lozitsky, *Sovremennaya Elektronika* 2005, № 4–6).
-- **Rejection without a ground pin.** A part without a ground pin responds only to the differences of its pin voltages. Then the errors referred to the input per volt of `vcc` (T_P), of `vee` (T_N) and of the input common mode (T_C) obey T_P + T_N + T_C = 1/A(s) at every frequency (0 for the FDA), and the usual single datasheet PSRR (both supplies moved apart) is 1/|T_P − T_N|. So only two of `CMRR`, `PSRR`, `PSRRP`, `PSRRN` are independent, at DC and again for the slopes above the corners. Each defaults to 0 (= not given). The first two given in the order `PSRRP`, `PSRRN`, `CMRR`, `PSRR` are used exactly, and the others are derived. If fewer than two are given, `CMRR` and then `PSRR` are added at their defaults. The signs, which a datasheet does not give, are chosen to match the other given values best. With nothing to match, the DC errors are taken as large as possible (a conservative offset) and the high-frequency slopes as small as possible. A value that cannot be honoured is a conflict; for example, with all of `CMRR`, `PSRRP` and `PSRRN` given, `CMRR` is derived. `python3 tools/rejection.py CMRR=100k PSRRP=50k PSRRN=20k` prints what the model makes of a parameter set (the same rules, in Python). The transistor-level references of `tests/transistor_level` obey the identity exactly.
+- **Rejection without a ground pin.** A part without a ground pin responds only to the differences of its pin voltages. Then the errors referred to the input per volt of `vcc` (T_P), of `vee` (T_N) and of the input common mode (T_C) obey T_P + T_N + T_C = 1/A(s) at every frequency (0 for the FDA), and the usual single datasheet PSRR (both supplies moved apart) is 1/(T_P − T_N). So only two of `CMRR`, `PSRR`, `PSRRP`, `PSRRN` are independent, at DC and again for the slopes above the corners. The first two given in the order `PSRRP`, `PSRRN`, `CMRR`, `PSRR` are used exactly, and the others are derived; the defaults of `CMRR` and `PSRR` count as given (0 = not given). A value that cannot be honoured is a conflict; for example, with all of `CMRR`, `PSRRP` and `PSRRN` given, `CMRR` is derived. `python3 tools/rejection.py CMRR=100k PSRRP=50k PSRRN=-20k` prints what the model makes of a parameter set (the same rules, in Python). The transistor-level references of `tests/transistor_level` obey the identity exactly.
+- **Signed DC parameters.** The DC values of `CMRR`, `PSRR`, `PSRRP` and `PSRRN` are signed: the error is 1/value, and a positive error moves the output like a positive `VOS` when its supply (or the input common mode) rises. At DC these errors come mostly from device mismatch: their signs differ from unit to unit and can change with temperature (in the transistor-level references, 0.2 % of mismatch in the CMOS input stage flips one of them), so a datasheet cannot give them. Enter datasheet magnitudes as positive, as for `VOS`, and flip signs to explore the spread (see below). Above the corners the coupling goes through the compensation and is systematic, so the slope signs are not taken from the parameters: in `OPAMP_FULL` the supply slopes are positive (as in all four transistor-level references) and an exact `CMRR` or `PSRR` slope takes the sign that keeps them so. The FDA has no systematic path from the supplies to its differential output, so there each slope keeps the sign of its DC value.
 - `VOS`, the input voltage noise and the CMRR/PSRR error terms form **one error voltage in series with the + input**, ahead of `RID`. No spurious `(VOS + en)/RID` current flows in the source resistance.
 - `RIC || CIC` is the common-mode input impedance of each input pin (`RIC` to `nref`, its current returned to `vee`; `CIC` half to each rail). The datasheet values can be used directly: “common-mode input impedance: 34 MΩ ∥ 4 pF” → `RIC=34Meg CIC=4p`. Only if a datasheet says the value was measured with both inputs tied together, use `RIC = 2·R` and `CIC = C/2`.
 - `VOS` is the offset at the nominal supplies `VCCN`, `VEEN` and the input common-mode voltage `VCMN` (default: mid-supply).
 - In the class-AB crossover (|Iout| below about `VXO/ROUT`) the small-signal output resistance is `2*ROUT`; it is `ROUT` once the output carries more than about `2*VXO/ROUT`. Set `VXO=0` for a constant `ROUT`.
-- `FP2` and `FP3` default to 0, which scales them with `GBW`, so changing `GBW` alone keeps the phase margin. Likewise `FPCM2` defaults to 4·`GBWCM`, which keeps the phase margin of the FDA's common-mode loop. A fixed `FCMRR` that leaves less than about 10 dB of CMRR at `GBW` (`CMRR`·`FCMRR`/`GBW` < 3) makes a follower's step response ring: the CMRR error source is in series with the input and grows with frequency.
+- `FP2` and `FP3` default to 0, which scales them with `GBW`, so changing `GBW` alone keeps the phase margin. Likewise `FPCM2` defaults to 4·`GBWCM`, which keeps the phase margin of the FDA's common-mode loop. A fixed `FCMRR` that leaves less than about 10 dB of CMRR at `GBW` (|`CMRR`|·`FCMRR`/`GBW` < 3) makes a follower's step response ring: the CMRR error source is in series with the input and grows with frequency.
 - Noise levels are exact at 27 °C and scale with kT at other temperatures.
 
 ## Quick start
@@ -142,15 +143,15 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 
 | Parameter | Unit | Meaning | `OPAMP_FULL` | `FDOPAMP_FULL` |
 |---|---|---|---|---|
-| `CMRR` | ratio | DC common-mode rejection ratio (31.6k = 90 dB); 0 = not given | 0 | 0 |
-| `PSRR` | ratio | DC supply rejection with both supplies moved apart (per volt of each supply), the usual single datasheet value; 0 = not given | 0 | 0 |
-| `PSRRP`, `PSRRN` | ratio | DC rejection of the positive and of the negative supply alone; 0 = not given | 0, 0 | 0, 0 |
-| | | defaults when nothing is given: `CMRR` = 31.6k and `PSRR` = 31.6k / 10k, which give PSRR+ / PSRR− of 89 / 112 dB (`OPAMP_FULL`, `A0` = 200k) and 89 / 84 dB (`FDOPAMP_FULL`) | | |
+| `CMRR` | ratio | DC common-mode rejection ratio (31.6k = 90 dB), signed; 0 = not given | −31.6k | 31.6k |
+| `PSRR` | ratio | DC supply rejection with both supplies moved apart (per volt of each supply), the usual single datasheet value, signed; 0 = not given | 31.6k | 10k |
+| `PSRRP`, `PSRRN` | ratio | DC rejection of the positive and of the negative supply alone, signed; 0 = not given | 0, 0 | 0, 0 |
+| | | the defaults give PSRR+ / PSRR− of 89 / 112 dB (`OPAMP_FULL`, `A0` = 200k) and 89 / 84 dB (`FDOPAMP_FULL`) | | |
 | `FCMRR` | Hz | frequency above which CMRR falls at 20 dB/decade; 0 = not given | 0 | 0 |
 | `FPSRR` | Hz | the same for `PSRR`, and for PSRR+ / PSRR− when `FPSRRP` / `FPSRRN` are 0 | 0 | 0 |
 | `FPSRRP`, `FPSRRN` | Hz | separate PSRR+ / PSRR− corner frequencies | 0, 0 | 0, 0 |
 | | | with fewer than two slopes given, the supplies get only the coupling through the gain stage, `KREF`/A(s) and (1 − `KREF`)/A(s) (`OPAMP_FULL`), or corners at 10⁻³·`GBW` (`FDOPAMP_FULL`) | | |
-| `KREF` | – | reference of the gain stages (`OPAMP_FULL`) or of the CM loop (`FDOPAMP_FULL`), `nref = vee + KREF·(vcc − vee)`. The supply it leans to couples through the compensation as 1/A(s) (in the µA741 that is `vee`, `KREF` = 0). The rejection totals stay as specified whatever `KREF` is; it matters above `FP2` and for the derived quantities | 0.5 | 0.5 |
+| `KREF` | – | reference of the gain stages (`OPAMP_FULL`) or of the CM loop (`FDOPAMP_FULL`), `nref = vee + KREF·(vcc − vee)`. The supply it leans to couples through the compensation as 1/A(s). It follows the architecture: 0 when the compensated gain stage (the common-emitter or common-source driver) works from `vee`, as in the µA741, 1 when from `vcc`. The rejection totals stay as specified whatever `KREF` is; it matters above `FP2` and for the derived quantities | 0.5 | 0.5 |
 | `VCCN`, `VEEN` | V | nominal supply voltages; the PSRR errors are referred to them | 15, −15 | 5, −5 |
 | `VCMN` | V | input common-mode voltage at which `VOS` is specified | mid-supply | mid-supply |
 
@@ -201,6 +202,24 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 | `KBAL` | – | output balance error: the output common-mode voltage moves by `KBAL` times the differential output voltage (datasheet dB → ratio); 0 = none | 0 |
 | `RVOCM` | Ω | `vocm` pin bias: `2*RVOCM` (noiseless) to each rail, i.e. `RVOCM` to mid-supply when the pin is left open | 50k |
 | `CVOCM` | F | capacitance of the `vocm` pin (half to each rail) | 1p |
+
+**Signed parameters and corner cases.** These DC parameters take a sign that, in a real part,
+device mismatch sets differently in each unit: `VOS`, `IOS`, `DVOST`, `DIBT`, `CMRR`, `PSRR`,
+`PSRRP`, `PSRRN`, and in the FDA also `VOSCM` and `KBAL`. (`IB` and `KJUMP` also take a sign,
+but theirs follows the input-pair type.) A datasheet gives magnitudes: enter them as positive.
+To model the spread, change the signs:
+
+- `PSRRP` and `PSRRN` given: equal signs give the worst derived CMRR (|1/`CMRR`| ≈
+  1/|`PSRRP`| + 1/|`PSRRN`|), opposite signs the best. Example: 90 dB each gives 84.7 dB with
+  equal signs, and 106 dB (only 1/`A0` left) with opposite ones.
+- `CMRR` and `PSRR` given: equal signs put the larger supply error on `vee` (PSRR− the worse),
+  opposite signs on `vcc`.
+- Offset over a range: a `CMRR` of the same sign as `VOS` makes the offset grow as the input
+  common mode rises, the opposite sign makes it shrink there. Likewise `PSRR` for the supplies
+  moving apart.
+
+The slopes above the corners are systematic in `OPAMP_FULL` and get their signs from the rules,
+whatever the signs of the DC values.
 
 The `OPAMP_FULL` defaults approximate a general-purpose 1 MHz bipolar op amp (µA741
 typicals) on ±15 V; the `FDOPAMP_FULL` defaults a generic ±5 V, 100 MHz FDA. A
@@ -258,9 +277,10 @@ ngspice-42 and the default parameters:
 | phase reversal `PRLO` = 1, `VPRLO` = 1: followers at −14.5 V (reversed, input current) / +14.5 V / −14.5 V through 100 kΩ | +12.53 V, −15.0 µA (`SR`·30 pF) / +12.53 V / −12.53 V (not reversed) | `KBAL` = 1m: output CM change / differential output change | 1.000m (1m) |
 | crossover `DVOST` = 1m, `DIBT` = −200n: offset step / bias-current step across the transition | 0.990 mV (1 mV − 2 V/A0) / −195 nA (−200 nA + 2 V/`RIC`) | | |
 | follower driven past the top of the range (`ICMHI` = 1.5, `VK` = 0.05), input 14.0 V / 14.8 V | 13.68 V / 13.68 V (stops at the edge) | | |
-| `PSRRP` = `PSRRN` = 31.62k, `FPSRRP` = 10, `FPSRRN` = 1k: PSRR+ / PSRR− at 10 kHz | 30.0 dB / 69.87 dB (theory 30.0 / 69.96 dB) | `PSRRP` = `PSRRN` = 10k, `FPSRRP` = 10k, `FPSRRN` = 1Meg: PSRR+ / PSRR− at 1 MHz | 40.0 dB / 76.99 dB (theory 40.0 / 76.99 dB) |
+| `PSRRP` = `PSRRN` = 31.62k, `FPSRRP` = 10, `FPSRRN` = 1k: PSRR+ / PSRR− at 10 kHz | 30.0 dB / 70.00 dB (theory 30.0 / 69.96 dB) | `PSRRP` = `PSRRN` = 10k, `FPSRRP` = 10k, `FPSRRN` = 1Meg: PSRR+ / PSRR− at 1 MHz | 40.0 dB / 76.99 dB (theory 40.0 / 76.99 dB) |
 | `ROUTDC` = 2850, `ROUT` = 33, `A0` = 8.6k: open-loop Zout at 0.1 Hz / 207 Hz (f_d) / 1 MHz | 2883 / 2039 / 32.9 Ω (theory 2883 / 2048 / 33) | | |
-| floating follower (supplies, input and load on a common driven against ground, or lifted by 100 V) | no output (< −300 dB), offset change 1e-14 V | floating gain-2 stage, the same | < −296 dB, 4e-14 V |
+| signed values: `PSRRP` = 31.62k with `PSRRN` = +31.62k / −31.62k: derived CMRR; vcc response with `PSRRP` = −31.62k vs +31.62k | 84.7 / 106.0 dB (theory 84.7 / 106.0); 179.8° (180°) | signed values: `PSRRP` = 10k with `PSRRN` = +10k / −20k: derived CMRR | 74.0 / 86.0 dB (theory 74.0 / 86.0) |
+| floating follower (supplies, input and load on a common driven against ground, or lifted by 100 V) | no output (< −300 dB), offset change 1e-14 V | floating gain-2 stage, the same | < −295 dB, 4e-14 V |
 
 `tests/fd_middlebrook.cir` also checks the Middlebrook loop gains of the FDA against a
 conventional L/C loop break (CM: identical; DM: within 0.5 %, the residual being the loading

@@ -1,4 +1,4 @@
-* <PART> characterization deck FAST (model-to-params skill rev 1.2)
+* <PART> characterization deck FAST (model-to-params skill rev 1.3)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out

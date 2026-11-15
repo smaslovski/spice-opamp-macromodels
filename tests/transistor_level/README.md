@@ -156,7 +156,7 @@ VHD/VLD and IB come from the characterization table:
 - GBW = f_u divided by the phase-margin factor (f_u/GBW), and FP2 from the phase
   margin, both tabulated in `skills/datasheet-to-params/SKILL.md`; FP3 = 3.33·FP2.
 - CMRR and PSRR stay at their defaults, since their roll-off was not characterized
-  (the default CMRR is flat; model 1.6).
+  (the default CMRR is flat; model 1.6 and later).
 - VHD and VLD are the headroom from the swing, corrected for the default `ROUT`.
 - `RID` = 2V_T/I_B for the bipolar pair.
 
@@ -255,7 +255,7 @@ What the method finds in D that `OPAMP_FULL` does not reproduce:
   junction of Q1, yet its output does not reverse. In `OPAMP_FULL` the junction
   current (`IPR`) comes only with phase reversal.
 
-**Rejection and DC output resistance** (model 1.6). In every reference the errors per
+**Rejection and DC output resistance** (model 1.6 and later). In every reference the errors per
 volt of `vcc`, `vee` and input common mode add up to 1/A of the *unloaded* gain, as
 for any part without a ground pin. The open-loop output resistance at DC is far
 above `ROUT` in A (2.8 kΩ against 32 Ω), B (0.87 kΩ against 21 Ω) and C (254 kΩ
@@ -263,6 +263,20 @@ against 1.1 kΩ), and falls to `ROUT` above the dominant pole; D's is about `ROU
 With `ROUTDC` and the unloaded `A0` that the skill now measures, the CMRR derived
 from PSRR+ and PSRR− in the fitted model equals the measured one in all four (102.2,
 92.3, 111.2, 105.5 dB). Without `ROUTDC` it was 86.5, 96.4 and 91.9 dB in A, B and C.
+
+**Signs of the rejection errors** (model 1.7). Measured open loop with the output
+free, the DC errors per volt of `vcc`, `vee` and input common mode have the signs
++ + + in A, + + − in B, + + + in C and + − − in D; `model-to-params` returns them as
+the signs of `PSRRP`, `PSRRN` and `CMRR`. They are not properties of the
+architecture: scaling one device of the input pair or of its current mirror by
+0.2–3 % flips the PSRR+ error of C at 0.2 %, its CMRR at 1 % and its PSRR− at 3 %,
+the CMRR of B between 1 and 3 %, and the PSRR− of D at 3 % (A, whose DC errors are
+large and systematic, keeps its signs). The slopes above the corners are different:
+in all four the supply on which the Miller-compensated stage works (`vcc` in A, `vee`
+in B, C and D) takes 95–99.8 % of the slope 1/(2π·GBW), always with a positive sign,
+and the same mismatch changes it by less than 3 %. This is why the model takes signed
+DC values but sets the slope signs itself, and why `KREF` follows the architecture
+(about 1 for A, 0 for B, C and D).
 
 **Substrates.** In the deck of the book the transistors have three terminals, so
 SPICE connects their substrate capacitances (`CJS` = 3 pF) to node 0, circuit

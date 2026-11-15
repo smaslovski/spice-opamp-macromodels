@@ -26,12 +26,13 @@ models well or at all: noise, temperature behaviour, and the fully differential
 
 ## Version and updates
 
-- Skill revision: **1.2** (2026-11-15)
-- For model version: **1.6** of `OPAMP_FULL` (the `Version` line in the header
-  of `opamp_full.lib`). For 1.5.x, the values are the same, except that 1.5.x has
-  no `ROUTDC` (leave it out and use the loaded gain for `A0`); there `FCMRR`,
-  `FPSRRP` and `FPSRRN` of 0 mean scaled defaults, so always write them out (as
-  this file does).
+- Skill revision: **1.3** (2026-11-15)
+- For model version: **1.7** of `OPAMP_FULL` (the `Version` line in the header
+  of `opamp_full.lib`). For 1.6, give `CMRR`, `PSRRP` and `PSRRN` as magnitudes
+  (1.6 accepts no sign and chooses the signs itself). For 1.5.x, the values are
+  the same as for 1.6, except that 1.5.x has no `ROUTDC` (leave it out and use
+  the loaded gain for `A0`); there `FCMRR`, `FPSRRP` and `FPSRRN` of 0 mean
+  scaled defaults, so always write them out (as this file does).
 - Repository: https://github.com/smaslovski/spice-opamp-macromodels
 - Latest revision of this file:
   https://github.com/smaslovski/spice-opamp-macromodels/blob/master/skills/model-to-params/SKILL.md
@@ -104,7 +105,7 @@ evaluates; leave the "derived" lines as they are.
 
 <!-- BEGIN header -->
 ```spice
-* <PART> characterization deck <AC|FAST|SLOW> (model-to-params skill rev 1.2)
+* <PART> characterization deck <AC|FAST|SLOW> (model-to-params skill rev 1.3)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -384,6 +385,12 @@ let x3 = psrrn_db-3
 let x20 = psrrn_db-20
 meas ac fpsn3 when psn=$&x3 fall=1
 meas ac fpsn20 when psn=$&x20 fall=1
+let cmsg = real(v(o2)/v(o1))
+let pssp = real(v(o3)/v(o1))
+let pssn = real(v(o4)/v(o1))
+meas ac cmrr_sg find cmsg at=1m
+meas ac psrrp_sg find pssp at=1m
+meas ac psrrn_sg find pssn at=1m
 let fz1 = gbwn/100
 let fz2 = gbwn/10
 meas ac zo_dc find vm(o5) at=1m
@@ -577,6 +584,9 @@ AC:
 .meas ac psrrn_db find mag(V(o1)/V(o4)) at=1m
 .meas ac fpsn3 when mag(V(o1)/V(o4))=psrrn_db/sqrt(2) fall=1
 .meas ac fpsn20 when mag(V(o1)/V(o4))=psrrn_db/10 fall=1
+.meas ac cmrr_sg find re(V(o2)/V(o1)) at=1m
+.meas ac psrrp_sg find re(V(o3)/V(o1)) at=1m
+.meas ac psrrn_sg find re(V(o4)/V(o1)) at=1m
 .meas ac zo_dc find mag(V(o5)) at=1m
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}
@@ -706,6 +716,7 @@ AC:
 .OPTIONS NUMDGT=8 NOPAGE
 .AC DEC 10 1m 100G
 .PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
+.PRINT AC VP(o2) VP(o3) VP(o4)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
 ```
 <!-- END pspice_ac -->
@@ -772,14 +783,14 @@ small-signal output resistance is doubled at idle, which the gain test sees).
 | Param | Formula | Notes |
 |---|---|---|
 | `ROUT` | `zo_b` | open-loop output impedance at GBWN/10. If `zo_a` and `zo_c` differ from it by more than 2×, say so. |
-| `ROUTDC` | `RL*(10^((a0u_db - a0_db)/20) - 1) - REFF` | the extra open-loop output resistance at DC, from the gain at 1 mHz without load (`a0u_db`) and with it (`a0_db`), both at idle. Set it only if it exceeds 0.1·`ROUT`; otherwise leave it out (0). Cross-check: `zo_dc - ROUT` (\|Zout\| at 1 mHz, at the DC load ILOAD); if the two differ by more than 30 %, the output resistance depends on the load current: say so and keep the idle value. (Model 1.6; for 1.5.x leave it out and use the loaded gain for A0.) |
+| `ROUTDC` | `RL*(10^((a0u_db - a0_db)/20) - 1) - REFF` | the extra open-loop output resistance at DC, from the gain at 1 mHz without load (`a0u_db`) and with it (`a0_db`), both at idle. Set it only if it exceeds 0.1·`ROUT`; otherwise leave it out (0). Cross-check: `zo_dc - ROUT` (\|Zout\| at 1 mHz, at the DC load ILOAD); if the two differ by more than 30 %, the output resistance depends on the load current: say so and keep the idle value. (Model 1.6 and later; for 1.5.x leave it out and use the loaded gain for A0.) |
 | `A0` | `10^(a0_db/20) * (RL + REFF + ROUTDC)/RL` | `a0_db`: gain at 1 mHz, with the load; `A0` is the unloaded gain (`10^(a0u_db/20)` when `ROUTDC` is set). |
 | `FP2`, `FP3`, `GBW` | see below | from `fu` and `ph_fu` |
-| `CMRR` | `10^(cmrr_db/20)` | DC CMRR (at 1 mHz). Above 160 dB (likewise for PSRR) the vendor model has no such coupling: take CMRR and FCMRR from the datasheet. |
+| `CMRR` | `sign(cmrr_sg) * 10^(cmrr_db/20)` | DC CMRR (at 1 mHz), signed: `cmrr_sg` is the real part of the common-mode response over the differential gain, so the sign says whether a rising input common mode moves the output like a positive (+) or negative (−) offset. Model 1.7 takes signed DC values; they reproduce this vendor model, which is one unit (in real parts the sign is set by mismatch and differs from unit to unit). Above 160 dB (likewise for PSRR) the vendor model has no such coupling: take CMRR and FCMRR from the datasheet. |
 | `FCMRR` | `fcm20/10` | the frequency where the CMRR has fallen 20 dB, divided by 10 (single-zero roll-off). If `fcm20` failed, use `fcm3`; if both failed, the CMRR is flat: use `1G`. If `fcm20/fcm3` is not between 7 and 14, the roll-off is not single-zero: still use `fcm20/10` and say so. |
-| `PSRRP`, `FPSRRP` | `10^(psrrp_db/20)`, `fpsp20/10` | as CMRR; positive supply |
-| `PSRRN`, `FPSRRN` | `10^(psrrn_db/20)`, `fpsn20/10` | negative supply. Give `FPSRRP` and `FPSRRN`, not `FPSRR`. |
-| | | In model 1.6 only two of CMRR, PSRR+ and PSRR− are independent (a part without a ground pin: the three errors per volt add up to 1/A0 unloaded). With all three given, the model uses PSRRP and PSRRN exactly and derives CMRR. A vendor model or a part measured here obeys the identity too, with its unloaded gain, which is the model's A0 when `ROUTDC` is set. `python3 tools/rejection.py <params>` shows the derived CMRR; report it with the measured one. |
+| `PSRRP`, `FPSRRP` | `sign(psrrp_sg) * 10^(psrrp_db/20)`, `fpsp20/10` | as CMRR; positive supply |
+| `PSRRN`, `FPSRRN` | `sign(psrrn_sg) * 10^(psrrn_db/20)`, `fpsn20/10` | negative supply. Give `FPSRRP` and `FPSRRN`, not `FPSRR`. The slopes above the corners get their signs from the model's rules (they are systematic), so only the DC values carry a sign. |
+| | | Only two of CMRR, PSRR+ and PSRR− are independent (a part without a ground pin: the three signed errors per volt, 1/CMRR + 1/PSRRP + 1/PSRRN, add up to 1/A0 unloaded). With all three given, the model uses PSRRP and PSRRN exactly and derives CMRR. A vendor model or a part measured here obeys the identity too, with its unloaded gain, which is the model's A0 when `ROUTDC` is set. If the identity fails by more than 1 dB, or the signs do not fit it, the vendor model refers something to node 0 (typical of older macromodels): its signs are then conventions of that model; say so. `python3 tools/rejection.py <params>` shows the derived CMRR; report it with the measured one. |
 | `RIC` | `1/Gc0` | `Gc0 = zc_re0/(zc_re0^2 + zc_im0^2)`; one pin, common mode, 1 mHz. Above 10 TΩ it is only a lower limit; cap at `1e15`. |
 | `RID` | `1/(Gd0 - Gc0)` | `Gd0 = zd_re0/(zd_re0^2 + zd_im0^2)`. If `Gd0 - Gc0 <= 0` or the result exceeds 1 TΩ: `1T`. |
 | `CIC` | `Bc/(2*pi*f10)` | `Bc = -zc_im/(zc_re^2 + zc_im^2)`, `f10 = GBWN/10` |
@@ -926,7 +937,9 @@ rows (for frequencies: linear in log f). The quantities named above are:
   `f20`: where `VDB(o1)` crosses 0, 40, 20 dB; `ph_fu` = `VP(o1)` at `fu` (if the
   phase column wraps through ±180°, unwrap it first). CMRR(f) =
   `VDB(o1) - VDB(o2)` per row: `cmrr_db` in the first row, `fcm3`/`fcm20` where it
-  has fallen 3/20 dB. PSRR+ with `VDB(o3)`, PSRR− with `VDB(o4)`. `zo_a/b/c` =
+  has fallen 3/20 dB. PSRR+ with `VDB(o3)`, PSRR− with `VDB(o4)`. Signs: `cmrr_sg`
+  = cos(`VP(o2)` − `VP(o1)`) in the first row (only its sign is used), `psrrp_sg`
+  and `psrrn_sg` likewise with `VP(o3)` and `VP(o4)`. `zo_a/b/c` =
   `VM(o5)` at GBWN/100, GBWN/10, GBWN; `zo_dc` = `VM(o5)` in the first row.
   `zd_re0`, `zd_im0` = `VR(p6)`, `VI(p6)` in the first row, `zd_re`, `zd_im` at GBWN/10; `zc_*` likewise with `p7`.
 - FAST: averages over a window are the mean of the rows in it. `vos` =
@@ -968,7 +981,7 @@ rows (for frequencies: linear in log f). The quantities named above are:
 3. **Phase margin and overshoot agree.** Overshoot 5 % ≈ 65°, 10 % ≈ 59°,
    20 % ≈ 48°, 30 % ≈ 39° (second-order estimate; CMRR roll-off adds overshoot in
    a follower).
-4. **CMRR·FCMRR/GBW ≥ 3.** Below that, a follower step rings in the model (the
+4. **|CMRR|·FCMRR/GBW ≥ 3.** Below that, a follower step rings in the model (the
    CMRR error is in series with the input). If the vendor model is like that,
    report it; do not change FCMRR.
 5. **FP2 ≥ 1.2·GBW**, and the output pole `f_out ≥ 10·GBW`. If not, warn that

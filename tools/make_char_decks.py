@@ -21,7 +21,7 @@ import os, re
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SKILL = os.path.join(ROOT, 'skills', 'model-to-params')
-REV = '1.2'
+REV = '1.3'
 
 HEADER = """\
 * {part} characterization deck {kind} (model-to-params skill rev {rev})
@@ -251,6 +251,12 @@ let x3 = psrrn_db-3
 let x20 = psrrn_db-20
 meas ac fpsn3 when psn=$&x3 fall=1
 meas ac fpsn20 when psn=$&x20 fall=1
+let cmsg = real(v(o2)/v(o1))
+let pssp = real(v(o3)/v(o1))
+let pssn = real(v(o4)/v(o1))
+meas ac cmrr_sg find cmsg at=1m
+meas ac psrrp_sg find pssp at=1m
+meas ac psrrn_sg find pssn at=1m
 let fz1 = gbwn/100
 let fz2 = gbwn/10
 meas ac zo_dc find vm(o5) at=1m
@@ -434,6 +440,9 @@ LT_AC = """\
 .meas ac psrrn_db find mag(V(o1)/V(o4)) at=1m
 .meas ac fpsn3 when mag(V(o1)/V(o4))=psrrn_db/sqrt(2) fall=1
 .meas ac fpsn20 when mag(V(o1)/V(o4))=psrrn_db/10 fall=1
+.meas ac cmrr_sg find re(V(o2)/V(o1)) at=1m
+.meas ac psrrp_sg find re(V(o3)/V(o1)) at=1m
+.meas ac psrrn_sg find re(V(o4)/V(o1)) at=1m
 .meas ac zo_dc find mag(V(o5)) at=1m
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}
@@ -548,6 +557,7 @@ PS_AC = """\
 .OPTIONS NUMDGT=8 NOPAGE
 .AC DEC 10 1m 100G
 .PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
+.PRINT AC VP(o2) VP(o3) VP(o4)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
 """
 

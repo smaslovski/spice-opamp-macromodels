@@ -1,4 +1,4 @@
-* <PART> characterization deck AC (model-to-params skill rev 1.2)
+* <PART> characterization deck AC (model-to-params skill rev 1.3)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -113,6 +113,9 @@ R7 o7 mid {RL}
 .meas ac psrrn_db find mag(V(o1)/V(o4)) at=1m
 .meas ac fpsn3 when mag(V(o1)/V(o4))=psrrn_db/sqrt(2) fall=1
 .meas ac fpsn20 when mag(V(o1)/V(o4))=psrrn_db/10 fall=1
+.meas ac cmrr_sg find re(V(o2)/V(o1)) at=1m
+.meas ac psrrp_sg find re(V(o3)/V(o1)) at=1m
+.meas ac psrrn_sg find re(V(o4)/V(o1)) at=1m
 .meas ac zo_dc find mag(V(o5)) at=1m
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}

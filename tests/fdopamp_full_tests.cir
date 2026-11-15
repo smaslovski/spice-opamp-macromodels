@@ -115,6 +115,20 @@ Rf12a op12 nn12 2k
 Rf12b on12 np12 2k
 Rl12  op12 on12 1k
 
+* --- 12. Signed rejection values: CM input as in test 2, PSRRP = 10k with
+*         PSRRN = +10k (X16) and -20k (X17); CMRR derived. expected
+*         (tools/rejection.py --fda): 74.0 dB (equal signs) and 86.0 dB
+X16  np16 nn16 vcc vee op16 on16 vo16 FDOPAMP_FULL PARAMS: PSRRP=10k PSRRN=10k
+Lf16a op16 nn16 1e9
+Lf16b on16 np16 1e9
+Cg16a np16 sc2 1e9
+Cg16b nn16 sc2 1e9
+X17  np17 nn17 vcc vee op17 on17 vo17 FDOPAMP_FULL PARAMS: PSRRP=10k PSRRN=-20k
+Lf17a op17 nn17 1e9
+Lf17b on17 np17 1e9
+Cg17a np17 sc2 1e9
+Cg17b nn17 sc2 1e9
+
 * --- 11. No ground node: floating gain-2 stage, inputs and vocm on the supply common,
 *         AC and DC on the common. expected: outputs relative to the common unchanged
 *         when the circuit is lifted by 100 V, no AC output (< -200 dB), no current in Vfl13
@@ -157,6 +171,11 @@ Rl13  op13 on13 1k
   meas ac fu       when ad=0
   meas ac ph_fu    find phd when ad=0
   meas ac cmrr_lf  find cmrrdb at=1k
+  * test 12: signed values (expected 74.0 and 86.0 dB)
+  let cmrr12a = vdb(op1,on1)-vdb(op16,on16)
+  let cmrr12b = vdb(op1,on1)-vdb(op17,on17)
+  meas ac cmrr12a_lf find cmrr12a at=1k
+  meas ac cmrr12b_lf find cmrr12b at=1k
   meas ac cmrr_1m  find cmrrdb at=1Meg
   * defaults (tools/rejection.py --fda): CMRR 90.0 dB, PSRR+ 89.3 dB at low frequency
   meas ac psrr_lf  find psrrp at=1k

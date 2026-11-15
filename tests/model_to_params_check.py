@@ -59,7 +59,7 @@ TRUE = {
                 'ICMHI=-0.1 ICMLO=-0.1 VK=0.05 ROUT=100 ISRC=40m ISNK=40m VXO=0 COUT=2p',
                 dict(VCC=5, VEE=0, VCM=2.5, GBWN='5Meg', SRN='5Meg', VSTEP=3, VSS='20m', W=1, OVR=0.3), 0),
     'jump_clamp': ('KJUMP=0.27 SRR=0.4Meg SRF=0.6Meg VCLMP=0.7 RCLMP=100 IB=-200n IOS=10n CMRR=100k '
-                   'PSRRP=50k PSRRN=20k FPSRRP=30 FPSRRN=300 VOS=-0.5m', {}, 2e-3),
+                   'PSRRP=50k PSRRN=-20k FPSRRP=30 FPSRRN=300 VOS=-0.5m', {}, 2e-3),
     'jump_pnp': ('KJUMP=-0.3 SR=2Meg ICMHI=1.2 ICMLO=0.9 VK=0.05', dict(SRN='2Meg'), 2e-3),
 }
 # the defaults of OPAMP_FULL that a round trip should return when not set
@@ -76,10 +76,10 @@ def truth(params):
     for kv in params.split():
         k, v = kv.split('=')
         t[k] = lp.num(v)
-    # CMRR, PSRRP, PSRRN: the effective values of the rejection rules (model 1.6)
+    # CMRR, PSRRP, PSRRN: the effective (signed) values of the rejection rules (model 1.7)
     v = rj.evaluate(dict(kv.split('=') for kv in params.split()))
     for k, q in (('CMRR', 'C'), ('PSRRP', 'P'), ('PSRRN', 'N')):
-        t[k] = 1 / abs(v[f'T{q}0'])
+        t[k] = 1 / v[f'T{q}0']
     if 'SR' in t and 'SRR' not in t:
         t['SR'] = t['SR']
     elif 'SRR' in t:

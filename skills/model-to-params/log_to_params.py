@@ -183,6 +183,9 @@ def parse_pspice(txt):
             r[tag + '20'] = interp_x(f, cur, cur[0] - 20, -1, logx=True)
             if key == 'cmrr':
                 r['cmrr_gbw'] = interp_y(f, cur, p['gbwn'], logx=True)
+            pcol = 'vp(' + col[4:]
+            if pcol in c:      # sign: Re(V(ox)/V(o1)) at the first frequency
+                r[key + '_sg'] = math.cos(math.radians(c[pcol][0] - ph[0]))
         g = p['gbwn']
         for k, fx in (('zo_a', g / 100), ('zo_b', g / 10), ('zo_c', g)):
             r[k] = interp_y(f, c['vm(o5)'], fx, logx=True)
@@ -394,7 +397,13 @@ def derive(ac, fast, slow, vxo=2e-3):
         if db > 160:
             notes.append(f'{name}: {db:.0f} dB, i.e. the vendor model has no such coupling; take {name} and {fz} from the datasheet (or keep the defaults).')
             continue
-        put(name, 10 ** (db / 20), f'{db:.1f} dB at 1 mHz')
+        sg = ac.get(key + '_sg')
+        if sg is None:
+            put(name, 10 ** (db / 20), f'{db:.1f} dB at 1 mHz (sign not measured: deck older than rev 1.3, entered as positive)')
+        else:
+            s = 1 if sg >= 0 else -1
+            put(name, s * 10 ** (db / 20), f"{db:.1f} dB at 1 mHz, sign {'+' if s > 0 else '-'} (Re of the response "
+                                           f"over the differential gain)")
         if tag + '20' in ac:
             put(fz, ac[tag + '20'] / 10, f"falls 20 dB at {sig(ac[tag + '20'])} Hz: corner = that / 10 (3 dB at {sig(ac.get(tag + '3', float('nan')))} Hz)")
             r = ac[tag + '20'] / ac.get(tag + '3', ac[tag + '20'] / 10)
@@ -404,8 +413,18 @@ def derive(ac, fast, slow, vxo=2e-3):
             put(fz, ac[tag + '3'], f"falls 3 dB at {sig(ac[tag + '3'])} Hz (never 20 dB)")
         else:
             put(fz, 1e9, 'flat up to 100 GHz')
-    if 'CMRR' in P and P['CMRR'] * P['FCMRR'] / gbw < 3:
-        notes.append(f"CMRR*FCMRR/GBW = {P['CMRR'] * P['FCMRR'] / gbw:.2f} < 3: a follower step will ring in the model (sanity check of the skill).")
+    if all(k in P for k in ('CMRR', 'PSRRP', 'PSRRN', 'A0')):
+        # a model without a ground node obeys 1/PSRRP + 1/PSRRN + 1/CMRR = 1/A0
+        # (unloaded gain); OPAMP_FULL derives CMRR from PSRRP and PSRRN
+        tc = 1 / P['A0'] - 1 / P['PSRRP'] - 1 / P['PSRRN']
+        err = 20 * math.log10(abs(tc * P['CMRR'])) if tc else float('inf')
+        if abs(err) > 1 or tc * P['CMRR'] < 0:
+            notes.append(f"CMRR: PSRRP, PSRRN and A0 imply CMRR = {sig(1 / tc) if tc else 'inf'} ({err:+.1f} dB from the measured value"
+                         f"{', opposite sign' if tc * P['CMRR'] < 0 else ''}). The vendor model does not obey the identity of a part "
+                         "without a ground pin (it refers something to node 0); the signs are then conventions of that model. "
+                         "OPAMP_FULL uses PSRRP and PSRRN and derives CMRR; to keep the measured CMRR instead, drop PSRRP or PSRRN.")
+    if 'CMRR' in P and abs(P['CMRR']) * P['FCMRR'] / gbw < 3:
+        notes.append(f"|CMRR|*FCMRR/GBW = {abs(P['CMRR']) * P['FCMRR'] / gbw:.2f} < 3: a follower step will ring in the model (sanity check of the skill).")
     # input impedance: Y(+ pin) - Y(common mode) = differential admittance
     yd0 = 1 / complex(ac['zd_re0'], ac.get('zd_im0', 0.0))
     yc0 = 1 / complex(ac['zc_re0'], ac.get('zc_im0', 0.0))

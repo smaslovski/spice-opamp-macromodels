@@ -62,6 +62,13 @@ CASES = {
     'ac_psrrn2': ('opamp_full.lib', "Vcc vcc 0 15\nVee vee 0 DC -15 AC 1\n"
                   "X1 0 out vcc vee out OPAMP_FULL PARAMS: PSRRP=31.6k PSRRN=31.6k FPSRRP=10 FPSRRN=1k\n",
                   ".ac dec 20 10 10Meg", [('psn10k', 'ac', 'V(out)@10k', 1e-3)]),
+    # signed rejection values (model 1.7): DC offset shift with a negative CMRR, and
+    # the HF sign rule with CMRR and PSRR exact (both corners given)
+    'dc_signed': ('opamp_full.lib', SUP15 + "Vin in 0 5\nX1 in out vcc vee out OPAMP_FULL PARAMS: CMRR=-1k PSRR=2k VCMN=0\n",
+                  ".dc Vin 4 6 0.5", [('vo', 'dc', 'V(out)@5', 1e-5)]),
+    'ac_signed': ('opamp_full.lib', "Vcc vcc 0 DC 15 AC 1\nVee vee 0 -15\n"
+                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: CMRR=-10k FCMRR=1k PSRR=31.6k FPSRR=100 PSRRN=0\n",
+                  ".ac dec 20 10 10Meg", [('pss1k', 'ac', 'V(out)@1k', 1e-3), ('pss100k', 'ac', 'V(out)@100k', 1e-3)]),
     'ac_float': ('opamp_full.lib', "Vfl c 0 DC 0 AC 1\nVsp vcc c 15\nVsn c vee 15\nVin in c DC 0 AC 1\n"
                  "X1 in out vcc vee out OPAMP_FULL\nRL out c 2k\n", ".ac dec 20 10 10Meg",
                  [('fl1k', 'ac', 'V(out)@1k', 1e-3), ('fl1m', 'ac', 'V(out)@1Meg', 1e-3)]),
@@ -94,6 +101,9 @@ CASES = {
     'fd_ac': ('fdopamp_full.lib', SUP5 + "Vip ip 0 DC 0 AC 0.5\nVin in 0 DC 0 AC -0.5\n" + FDGAIN4 +
               "X1 a b vcc vee outp outn 0 FDOPAMP_FULL\n", ".ac dec 50 1k 1G",
               [('g1m', 'ac', 'V(outp)@1Meg', 1e-3), ('g20m', 'ac', 'V(outp)@20Meg', 1e-2)]),
+    'fd_signed': ('fdopamp_full.lib', "Vcc vcc 0 5\nVee vee 0 DC -5 AC 1\nVip ip 0 0\nVin in 0 0\n" + FDGAIN4 +
+                  "X1 a b vcc vee outp outn 0 FDOPAMP_FULL PARAMS: PSRRP=10k PSRRN=-3k FPSRRN=100k\nRL outp outn 1k\n",
+                  ".ac dec 20 10 100Meg", [('fsn1k', 'ac', 'V(outp)@1k', 1e-3), ('fsn1m', 'ac', 'V(outp)@1Meg', 1e-3)]),
     'fd_routdc': ('fdopamp_full.lib', SUP5 + "Vip ip 0 0\nVin in 0 0\n" + FDGAIN4 +
                   "X1 a b vcc vee outp outn 0 FDOPAMP_FULL PARAMS: ROUTDC=10k\nIzp 0 outp DC 0 AC 0.5\n"
                   "Izn outn 0 DC 0 AC 0.5\nRL outp outn 1k\n", ".ac dec 20 10 100Meg",

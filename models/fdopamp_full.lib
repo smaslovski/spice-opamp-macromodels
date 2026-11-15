@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.6 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.7 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee outp outn vocm
 *   outp is the non-inverted output (in phase with inp), outn the inverted one.
@@ -47,10 +47,15 @@
 *     per volt of vcc (T_P), of vee (T_N) and of the input common mode (T_C)
 *     obey T_P + T_N + T_C = 0 at every frequency (no ground pin; nothing
 *     couples through the DM gain node). PSRR (both supplies moved apart, per
-*     volt of each) is 1/|T_P - T_N|. Only two of CMRR, PSRR, PSRRP, PSRRN are
+*     volt of each) is 1/(T_P - T_N). Only two of CMRR, PSRR, PSRRP, PSRRN are
 *     independent; the rules are those of OPAMP_FULL (see opamp_full.lib and
-*     tools/rejection.py --fda), with these defaults: PSRR = 10k, and supply
-*     corners at 1e-3*GBW when fewer than two slopes are given.
+*     tools/rejection.py --fda): signed DC values, the first two given in the
+*     order PSRRP, PSRRN, CMRR, PSRR exact. Differences: the defaults are
+*     CMRR = 31.6k and PSRR = 10k; with fewer than two given slopes the
+*     supplies get zeros at 1e-3*GBW; and every slope takes the sign of its
+*     DC value (a zero at the corner). In a symmetric FDA the supplies do not
+*     reach the differential output systematically, so at high frequency the
+*     coupling is mismatch too, as at DC.
 *   - SR is the DIFFERENTIAL output slew rate (each output slews at SR/2).
 *   - The DM node n1 holds the differential output voltage. It is clamped to
 *     +/-2*min(V(vcc)-VHD-Vocm, Vocm-V(vee)-VLD), so the outputs saturate
@@ -105,15 +110,14 @@
 *                           OP27-style clamp: VCLMP=0.7 RCLMP=100
 *   RCLMP   ohm    100      series resistance of each clamp diode
 *  Common-mode and supply rejection (0 = not given; see Notes)
-*   CMRR    ratio  0        DC CMRR (31.6k = 90 dB)
-*   PSRR    ratio  0        DC PSRR with both supplies moved apart (per volt of
+*   CMRR    ratio  31.6k    DC CMRR (31.6k = 90 dB); signed, see below
+*   PSRR    ratio  10k      DC PSRR with both supplies moved apart (per volt of
 *                           each supply), the usual single datasheet value
 *   PSRRP   ratio  0        DC rejection of the positive supply alone
 *   PSRRN   ratio  0        DC rejection of the negative supply alone
-*                           Defaults (nothing given): CMRR = 31.6k, PSRR = 10k,
-*                           giving PSRR+ 89 dB, PSRR- 84 dB
+*                           The defaults give PSRR+ 89 dB, PSRR- 84 dB
 *   FCMRR   Hz     0        CMRR falls at 20 dB/dec above this frequency.
-*                           Keep CMRR >= 10 dB at GBW (CMRR*FCMRR/GBW >= 3):
+*                           Keep CMRR >= 10 dB at GBW (|CMRR|*FCMRR/GBW >= 3):
 *                           the CM error is in series with the input, and
 *                           below that a follower's step response rings
 *   FPSRR   Hz     0        corner of PSRR, and of PSRR+/PSRR- if FPSRRP/FPSRRN
@@ -183,6 +187,14 @@
 *   RVOCM   ohm    50k      vocm pin bias: 2*RVOCM (noiseless) to each rail,
 *                           i.e. RVOCM to mid-supply when the pin is open
 *   CVOCM   F      1p       vocm pin capacitance (half to each rail)
+*
+* SIGNED PARAMETERS
+*   As in OPAMP_FULL (see its header), these take a sign set by device
+*   mismatch: VOS, IOS, DVOST, DIBT, CMRR, PSRR, PSRRP, PSRRN, and here also
+*   VOSCM and KBAL. Datasheet magnitudes go in as positive values; change the
+*   signs to model the spread (PSRRP and PSRRN of equal sign: worst derived
+*   CMRR; opposite: best). In this model the signs also set the slopes above
+*   the corners.
 *==============================================================================
 
 *------------------------------------------------------------------------------
@@ -204,7 +216,7 @@ Hd  out na Vs {K1/CD}
 + A0=100k GBW=100Meg SR=200Meg FP2=0 FP3=0
 + VOS=1m IB=2u IOS=0.1u
 + RID=1Meg CID=1p RIC=200Meg CIC=1p
-+ CMRR=0 PSRR=0 PSRRP=0 PSRRN=0 FCMRR=0 FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=5 VEEN=-5 KREF=0.5
++ CMRR=31.6k PSRR=10k PSRRP=0 PSRRN=0 FCMRR=0 FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=5 VEEN=-5 KREF=0.5
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1
@@ -306,266 +318,63 @@ Gfn  vee inn nfn1 nfn2 {GFI}
 .param RJ2PI={6.283185307}
 .param RJG0={0}
 .param RJG1={0}
-.param RJHP={PSRRP>0 ? 1 : 0}
-.param RJHN={PSRRN>0 ? 1 : 0}
-.param RJHC={CMRR>0 ? 1 : 0}
-.param RJHS={PSRR>0 ? 1 : 0}
-.param RJMP0={1/max(PSRRP,1e-30)}
-.param RJMN0={1/max(PSRRN,1e-30)}
-.param RJMC0={CMRR>0 ? 1/CMRR : 1/31.6k}
-.param RJMS0={PSRR>0 ? 1/PSRR : 1/10k}
-.param RJK0={RJHP+RJHN+RJHC+RJHS}
-.param RJLA0={RJK0<2 ? 1 : 0}
-.param RJGC0={max(RJHC,RJLA0)}
-.param RJLB0={RJHP+RJHN+RJGC0+RJHS<2 ? 1 : 0}
-.param RJGS0={max(RJHS,RJLB0)}
-.param RJGP0={RJHP}
-.param RJGN0={RJHN}
-.param RJUP0={RJHP}
-.param RJFP0={1}
-.param RJSP0={1}
-.param RJUN0={RJHN}
-.param RJFN0={1}
-.param RJSN0={1}
-.param RJUC0={RJHC}
-.param RJFC0={1}
-.param RJSC0={1}
-.param RJUS0={RJHS}
-.param RJFS0={1}
-.param RJSS0={1}
-.param RJKN0={RJGP0}
-.param RJKC0={RJGP0+RJGN0}
-.param RJKS0={RJGP0+RJGN0+RJGC0}
-.param RJXP0={RJGP0}
-.param RJXN0={RJGN0*(1-min(RJKN0,1))}
-.param RJXC0={RJGC0*(1-min(RJKC0,1))}
-.param RJXS0={RJGS0*(1-min(RJKS0,1))}
-.param RJYP0={0}
-.param RJYN0={RJGN0*(min(RJKN0,1)-min(max(RJKN0-1,0),1))}
-.param RJYC0={RJGC0*(min(RJKC0,1)-min(max(RJKC0-1,0),1))}
-.param RJYS0={RJGS0*(min(RJKS0,1)-min(max(RJKS0-1,0),1))}
-.param RJAX0={RJXP0+RJXC0+RJXS0}
-.param RJBX0={RJXN0+RJXC0-RJXS0}
-.param RJCX0={RJXC0*RJG0}
-.param RJQX0={1-2*RJXC0}
-.param RJMX0={RJXP0*RJMP0+RJXN0*RJMN0+RJXC0*RJMC0+RJXS0*RJMS0}
-.param RJFX0={RJXP0*RJFP0+RJXN0*RJFN0+RJXC0*RJFC0+RJXS0*RJFS0}
-.param RJSX0={RJXP0*RJSP0+RJXN0*RJSN0+RJXC0*RJSC0+RJXS0*RJSS0}
-.param RJAY0={RJYP0+RJYC0+RJYS0}
+.param RJHP={abs(PSRRP)>0 ? 1 : 0}
+.param RJHN={abs(PSRRN)>0 ? 1 : 0}
+.param RJHC={abs(CMRR)>0 ? 1 : 0}
+.param RJHS={abs(PSRR)>0 ? 1 : 0}
+.param RJVP0={RJHP/(PSRRP+1-RJHP)}
+.param RJVN0={RJHN/(PSRRN+1-RJHN)}
+.param RJVC0={RJHC/(CMRR+1-RJHC)+(1-RJHC)*(1/31.6k)}
+.param RJVS0={RJHS/(PSRR+1-RJHS)+(1-RJHS)*(1/10k)}
+.param RJGC0={RJHP+RJHN+RJHC+RJHS<2 ? 1 : RJHC}
+.param RJGS0={RJHP+RJHN+RJGC0+RJHS<2 ? 1 : RJHS}
+.param RJXP0={RJHP}
+.param RJXN0={RJHP>0 ? 0 : RJHN}
+.param RJXC0={RJHP+RJHN>0 ? 0 : RJGC0}
+.param RJYN0={RJHP>0 ? RJHN : 0}
+.param RJYC0={RJGC0*(min(RJHP+RJHN,1)-min(max(RJHP+RJHN-1,0),1))}
+.param RJYS0={RJGS0*(min(RJHP+RJHN+RJGC0,1)-min(max(RJHP+RJHN+RJGC0-1,0),1))}
+.param RJAX0={RJXP0+RJXC0}
+.param RJBX0={RJXN0+RJXC0}
+.param RJRX0={RJXP0*RJVP0+RJXN0*RJVN0+RJXC0*(RJG0-RJVC0)}
+.param RJAY0={RJYC0+RJYS0}
 .param RJBY0={RJYN0+RJYC0-RJYS0}
-.param RJCY0={RJYC0*RJG0}
-.param RJQY0={1-2*RJYC0}
-.param RJMY0={RJYP0*RJMP0+RJYN0*RJMN0+RJYC0*RJMC0+RJYS0*RJMS0}
-.param RJFY0={RJYP0*RJFP0+RJYN0*RJFN0+RJYC0*RJFC0+RJYS0*RJFS0}
-.param RJSY0={RJYP0*RJSP0+RJYN0*RJSN0+RJYC0*RJSC0+RJYS0*RJSS0}
-.param RJDET0={RJAX0*RJBY0-RJAY0*RJBX0}
-.param RJEP0={RJUP0*(1-RJXP0-RJYP0)}
-.param RJEN0={RJUN0*(1-RJXN0-RJYN0)}
-.param RJEC0={RJUC0*(1-RJXC0-RJYC0)}
-.param RJES0={RJUS0*(1-RJXS0-RJYS0)}
-.param RJDP0={1-RJXP0-RJYP0}
-.param RJDN0={1-RJXN0-RJYN0}
-.param RJDC0={1-RJXC0-RJYC0}
-.param RJMXY0={RJMX0+RJMY0+1e-30}
-.param RJRX10={RJCX0+RJQX0*(RJFX0*(1)+(1-RJFX0)*RJSX0)*RJMX0}
-.param RJRY10={RJCY0+RJQY0*(RJFY0*(1)+(1-RJFY0)*RJSY0)*RJMY0}
-.param RJTP10={(RJRX10*RJBY0-RJRY10*RJBX0)/RJDET0}
-.param RJTN10={(RJAX0*RJRY10-RJAY0*RJRX10)/RJDET0}
-.param RJTC10={RJG0-RJTP10-RJTN10}
-.param RJTS10={RJTP10-RJTN10}
-.param RJLP10={log(max(abs(RJTP10),1e-30)/max(RJMP0,1e-30))}
-.param RJLN10={log(max(abs(RJTN10),1e-30)/max(RJMN0,1e-30))}
-.param RJLC10={log(max(abs(RJTC10),1e-30)/max(RJMC0,1e-30))}
-.param RJLS10={log(max(abs(RJTS10),1e-30)/max(RJMS0,1e-30))}
-.param RJMM10={RJEP0*RJLP10*RJLP10+RJEN0*RJLN10*RJLN10+RJEC0*RJLC10*RJLC10+RJES0*RJLS10*RJLS10}
-.param RJTI10={RJDP0*abs(RJTP10)+RJDN0*abs(RJTN10)+RJDC0*abs(RJTC10)}
-.param RJCO10={RJMM10+(-1)*1e-6*RJTI10/RJMXY0}
-.param RJRX20={RJCX0+RJQX0*(RJFX0*(1)+(1-RJFX0)*RJSX0)*RJMX0}
-.param RJRY20={RJCY0+RJQY0*(RJFY0*(-1)+(1-RJFY0)*RJSY0)*RJMY0}
-.param RJTP20={(RJRX20*RJBY0-RJRY20*RJBX0)/RJDET0}
-.param RJTN20={(RJAX0*RJRY20-RJAY0*RJRX20)/RJDET0}
-.param RJTC20={RJG0-RJTP20-RJTN20}
-.param RJTS20={RJTP20-RJTN20}
-.param RJLP20={log(max(abs(RJTP20),1e-30)/max(RJMP0,1e-30))}
-.param RJLN20={log(max(abs(RJTN20),1e-30)/max(RJMN0,1e-30))}
-.param RJLC20={log(max(abs(RJTC20),1e-30)/max(RJMC0,1e-30))}
-.param RJLS20={log(max(abs(RJTS20),1e-30)/max(RJMS0,1e-30))}
-.param RJMM20={RJEP0*RJLP20*RJLP20+RJEN0*RJLN20*RJLN20+RJEC0*RJLC20*RJLC20+RJES0*RJLS20*RJLS20}
-.param RJTI20={RJDP0*abs(RJTP20)+RJDN0*abs(RJTN20)+RJDC0*abs(RJTC20)}
-.param RJCO20={RJMM20+(-1)*1e-6*RJTI20/RJMXY0}
-.param RJRX30={RJCX0+RJQX0*(RJFX0*(-1)+(1-RJFX0)*RJSX0)*RJMX0}
-.param RJRY30={RJCY0+RJQY0*(RJFY0*(1)+(1-RJFY0)*RJSY0)*RJMY0}
-.param RJTP30={(RJRX30*RJBY0-RJRY30*RJBX0)/RJDET0}
-.param RJTN30={(RJAX0*RJRY30-RJAY0*RJRX30)/RJDET0}
-.param RJTC30={RJG0-RJTP30-RJTN30}
-.param RJTS30={RJTP30-RJTN30}
-.param RJLP30={log(max(abs(RJTP30),1e-30)/max(RJMP0,1e-30))}
-.param RJLN30={log(max(abs(RJTN30),1e-30)/max(RJMN0,1e-30))}
-.param RJLC30={log(max(abs(RJTC30),1e-30)/max(RJMC0,1e-30))}
-.param RJLS30={log(max(abs(RJTS30),1e-30)/max(RJMS0,1e-30))}
-.param RJMM30={RJEP0*RJLP30*RJLP30+RJEN0*RJLN30*RJLN30+RJEC0*RJLC30*RJLC30+RJES0*RJLS30*RJLS30}
-.param RJTI30={RJDP0*abs(RJTP30)+RJDN0*abs(RJTN30)+RJDC0*abs(RJTC30)}
-.param RJCO30={RJMM30+(-1)*1e-6*RJTI30/RJMXY0}
-.param RJRX40={RJCX0+RJQX0*(RJFX0*(-1)+(1-RJFX0)*RJSX0)*RJMX0}
-.param RJRY40={RJCY0+RJQY0*(RJFY0*(-1)+(1-RJFY0)*RJSY0)*RJMY0}
-.param RJTP40={(RJRX40*RJBY0-RJRY40*RJBX0)/RJDET0}
-.param RJTN40={(RJAX0*RJRY40-RJAY0*RJRX40)/RJDET0}
-.param RJTC40={RJG0-RJTP40-RJTN40}
-.param RJTS40={RJTP40-RJTN40}
-.param RJLP40={log(max(abs(RJTP40),1e-30)/max(RJMP0,1e-30))}
-.param RJLN40={log(max(abs(RJTN40),1e-30)/max(RJMN0,1e-30))}
-.param RJLC40={log(max(abs(RJTC40),1e-30)/max(RJMC0,1e-30))}
-.param RJLS40={log(max(abs(RJTS40),1e-30)/max(RJMS0,1e-30))}
-.param RJMM40={RJEP0*RJLP40*RJLP40+RJEN0*RJLN40*RJLN40+RJEC0*RJLC40*RJLC40+RJES0*RJLS40*RJLS40}
-.param RJTI40={RJDP0*abs(RJTP40)+RJDN0*abs(RJTN40)+RJDC0*abs(RJTC40)}
-.param RJCO40={RJMM40+(-1)*1e-6*RJTI40/RJMXY0}
-.param RJSGX0={min(RJCO10,RJCO20)<=min(RJCO30,RJCO40) ? 1 : -1}
-.param RJSA0={RJCO10<=RJCO20 ? 1 : -1}
-.param RJSB0={RJCO30<=RJCO40 ? 1 : -1}
-.param RJSGY0={0.5*(1+RJSGX0)*RJSA0+0.5*(1-RJSGX0)*RJSB0}
-.param RJRX0={RJCX0+RJQX0*(RJFX0*(RJSGX0)+(1-RJFX0)*RJSX0)*RJMX0}
-.param RJRY0={RJCY0+RJQY0*(RJFY0*(RJSGY0)+(1-RJFY0)*RJSY0)*RJMY0}
-.param RJTP0={(RJRX0*RJBY0-RJRY0*RJBX0)/RJDET0}
-.param RJTN0={(RJAX0*RJRY0-RJAY0*RJRX0)/RJDET0}
-.param RJTC0={RJG0-RJTP0-RJTN0}
-.param RJTS0={RJTP0-RJTN0}
-.param TP0={RJTP0}
-.param TN0={RJTN0}
-.param TC0={RJTC0}
-.param TS0={RJTS0}
+.param RJRY0={RJYN0*RJVN0+RJYC0*(RJG0-RJVC0)+RJYS0*RJVS0}
+.param RJD0={RJAX0*RJBY0-RJAY0*RJBX0}
+.param TP0={(RJRX0*RJBY0-RJRY0*RJBX0)/RJD0}
+.param TN0={(RJAX0*RJRY0-RJAY0*RJRX0)/RJD0}
+.param TC0={RJG0-TP0-TN0}
+.param TS0={TP0-TN0}
 .param RJFPV={FPSRRP>0 ? FPSRRP : FPSRR}
 .param RJFNV={FPSRRN>0 ? FPSRRN : FPSRR}
-.param RJOP={RJFPV>0 ? 1 : 0}
-.param RJON={RJFNV>0 ? 1 : 0}
-.param RJOC={FCMRR>0 ? 1 : 0}
-.param RJOS={FPSRR>0 ? 1 : 0}
-.param RJJP={RJHP*RJOP}
-.param RJJN={RJHN*RJON}
-.param RJJC={RJHC*RJOC}
-.param RJJS={RJHS*RJOS}
-.param RJMP1={RJJP>0 ? RJMP0/(RJ2PI*max(RJFPV,1e-30)) : abs(TP0)/(RJ2PI*1e-3*GBW)}
-.param RJMN1={RJJN>0 ? RJMN0/(RJ2PI*max(RJFNV,1e-30)) : abs(TN0)/(RJ2PI*1e-3*GBW)}
-.param RJMC1={RJJC>0 ? RJMC0/(RJ2PI*max(FCMRR,1e-30)) : 0}
-.param RJMS1={RJJS>0 ? RJMS0/(RJ2PI*max(FPSRR,1e-30)) : 0}
-.param RJK1={RJJP+RJJN+RJJC+RJJS}
-.param RJLA1={RJK1<2 ? 1-RJJP : 0}
+.param RJJP={RJFPV>0 ? RJHP : 0}
+.param RJJN={RJFNV>0 ? RJHN : 0}
+.param RJJC={FCMRR>0 ? RJHC : 0}
+.param RJJS={FPSRR>0 ? RJHS : 0}
+.param RJLA1={RJJP+RJJN+RJJC+RJJS<2 ? 1-RJJP : 0}
 .param RJGP1={max(RJJP,RJLA1)}
-.param RJLB1={RJK1+RJLA1<2 ? 1-RJJN : 0}
-.param RJGN1={max(RJJN,RJLB1)}
-.param RJGC1={RJJC}
-.param RJGS1={RJJS}
-.param RJUP1={RJJP}
-.param RJUN1={RJJN}
-.param RJUC1={RJJC}
-.param RJUS1={RJJS}
-.param RJFP1={RJJP}
-.param RJFN1={RJJN}
-.param RJFC1={1}
-.param RJFS1={1}
-.param RJSP1={TP0>=0 ? 1 : -1}
-.param RJSN1={TN0>=0 ? 1 : -1}
-.param RJSC1={1}
-.param RJSS1={1}
-.param RJKN1={RJGP1}
-.param RJKC1={RJGP1+RJGN1}
-.param RJKS1={RJGP1+RJGN1+RJGC1}
+.param RJGN1={RJJP+RJJN+RJJC+RJJS+RJLA1<2 ? 1 : RJJN}
 .param RJXP1={RJGP1}
-.param RJXN1={RJGN1*(1-min(RJKN1,1))}
-.param RJXC1={RJGC1*(1-min(RJKC1,1))}
-.param RJXS1={RJGS1*(1-min(RJKS1,1))}
-.param RJYP1={0}
-.param RJYN1={RJGN1*(min(RJKN1,1)-min(max(RJKN1-1,0),1))}
-.param RJYC1={RJGC1*(min(RJKC1,1)-min(max(RJKC1-1,0),1))}
-.param RJYS1={RJGS1*(min(RJKS1,1)-min(max(RJKS1-1,0),1))}
-.param RJAX1={RJXP1+RJXC1+RJXS1}
-.param RJBX1={RJXN1+RJXC1-RJXS1}
-.param RJCX1={RJXC1*RJG1}
-.param RJQX1={1-2*RJXC1}
-.param RJMX1={RJXP1*RJMP1+RJXN1*RJMN1+RJXC1*RJMC1+RJXS1*RJMS1}
-.param RJFX1={RJXP1*RJFP1+RJXN1*RJFN1+RJXC1*RJFC1+RJXS1*RJFS1}
-.param RJSX1={RJXP1*RJSP1+RJXN1*RJSN1+RJXC1*RJSC1+RJXS1*RJSS1}
-.param RJAY1={RJYP1+RJYC1+RJYS1}
+.param RJXN1={RJGP1>0 ? 0 : RJGN1}
+.param RJXC1={RJGP1+RJGN1>0 ? 0 : RJJC}
+.param RJYN1={RJGP1>0 ? RJGN1 : 0}
+.param RJYC1={RJJC*(min(RJGP1+RJGN1,1)-min(max(RJGP1+RJGN1-1,0),1))}
+.param RJYS1={RJJS*(min(RJGP1+RJGN1+RJJC,1)-min(max(RJGP1+RJGN1+RJJC-1,0),1))}
+.param RJVP1={RJJP>0 ? RJVP0/(RJ2PI*max(RJFPV,1e-30)) : TP0/(RJ2PI*1e-3*GBW)}
+.param RJVN1={RJJN>0 ? RJVN0/(RJ2PI*max(RJFNV,1e-30)) : TN0/(RJ2PI*1e-3*GBW)}
+.param RJVC1={RJJC>0 ? RJVC0/(RJ2PI*max(FCMRR,1e-30)) : 0}
+.param RJVS1={RJJS>0 ? RJVS0/(RJ2PI*max(FPSRR,1e-30)) : 0}
+.param RJAX1={RJXP1+RJXC1}
+.param RJBX1={RJXN1+RJXC1}
+.param RJRX1={RJXP1*RJVP1+RJXN1*RJVN1+RJXC1*(RJG1-RJVC1)}
+.param RJAY1={RJYC1+RJYS1}
 .param RJBY1={RJYN1+RJYC1-RJYS1}
-.param RJCY1={RJYC1*RJG1}
-.param RJQY1={1-2*RJYC1}
-.param RJMY1={RJYP1*RJMP1+RJYN1*RJMN1+RJYC1*RJMC1+RJYS1*RJMS1}
-.param RJFY1={RJYP1*RJFP1+RJYN1*RJFN1+RJYC1*RJFC1+RJYS1*RJFS1}
-.param RJSY1={RJYP1*RJSP1+RJYN1*RJSN1+RJYC1*RJSC1+RJYS1*RJSS1}
-.param RJDET1={RJAX1*RJBY1-RJAY1*RJBX1}
-.param RJEP1={RJUP1*(1-RJXP1-RJYP1)}
-.param RJEN1={RJUN1*(1-RJXN1-RJYN1)}
-.param RJEC1={RJUC1*(1-RJXC1-RJYC1)}
-.param RJES1={RJUS1*(1-RJXS1-RJYS1)}
-.param RJDP1={1-RJXP1-RJYP1}
-.param RJDN1={1-RJXN1-RJYN1}
-.param RJDC1={1-RJXC1-RJYC1}
-.param RJMXY1={RJMX1+RJMY1+1e-30}
-.param RJRX11={RJCX1+RJQX1*(RJFX1*(1)+(1-RJFX1)*RJSX1)*RJMX1}
-.param RJRY11={RJCY1+RJQY1*(RJFY1*(1)+(1-RJFY1)*RJSY1)*RJMY1}
-.param RJTP11={(RJRX11*RJBY1-RJRY11*RJBX1)/RJDET1}
-.param RJTN11={(RJAX1*RJRY11-RJAY1*RJRX11)/RJDET1}
-.param RJTC11={RJG1-RJTP11-RJTN11}
-.param RJTS11={RJTP11-RJTN11}
-.param RJLP11={log(max(abs(RJTP11),1e-30)/max(RJMP1,1e-30))}
-.param RJLN11={log(max(abs(RJTN11),1e-30)/max(RJMN1,1e-30))}
-.param RJLC11={log(max(abs(RJTC11),1e-30)/max(RJMC1,1e-30))}
-.param RJLS11={log(max(abs(RJTS11),1e-30)/max(RJMS1,1e-30))}
-.param RJMM11={RJEP1*RJLP11*RJLP11+RJEN1*RJLN11*RJLN11+RJEC1*RJLC11*RJLC11+RJES1*RJLS11*RJLS11}
-.param RJTI11={RJDP1*abs(RJTP11)+RJDN1*abs(RJTN11)+RJDC1*abs(RJTC11)}
-.param RJCO11={RJMM11+(1)*1e-6*RJTI11/RJMXY1}
-.param RJRX21={RJCX1+RJQX1*(RJFX1*(1)+(1-RJFX1)*RJSX1)*RJMX1}
-.param RJRY21={RJCY1+RJQY1*(RJFY1*(-1)+(1-RJFY1)*RJSY1)*RJMY1}
-.param RJTP21={(RJRX21*RJBY1-RJRY21*RJBX1)/RJDET1}
-.param RJTN21={(RJAX1*RJRY21-RJAY1*RJRX21)/RJDET1}
-.param RJTC21={RJG1-RJTP21-RJTN21}
-.param RJTS21={RJTP21-RJTN21}
-.param RJLP21={log(max(abs(RJTP21),1e-30)/max(RJMP1,1e-30))}
-.param RJLN21={log(max(abs(RJTN21),1e-30)/max(RJMN1,1e-30))}
-.param RJLC21={log(max(abs(RJTC21),1e-30)/max(RJMC1,1e-30))}
-.param RJLS21={log(max(abs(RJTS21),1e-30)/max(RJMS1,1e-30))}
-.param RJMM21={RJEP1*RJLP21*RJLP21+RJEN1*RJLN21*RJLN21+RJEC1*RJLC21*RJLC21+RJES1*RJLS21*RJLS21}
-.param RJTI21={RJDP1*abs(RJTP21)+RJDN1*abs(RJTN21)+RJDC1*abs(RJTC21)}
-.param RJCO21={RJMM21+(1)*1e-6*RJTI21/RJMXY1}
-.param RJRX31={RJCX1+RJQX1*(RJFX1*(-1)+(1-RJFX1)*RJSX1)*RJMX1}
-.param RJRY31={RJCY1+RJQY1*(RJFY1*(1)+(1-RJFY1)*RJSY1)*RJMY1}
-.param RJTP31={(RJRX31*RJBY1-RJRY31*RJBX1)/RJDET1}
-.param RJTN31={(RJAX1*RJRY31-RJAY1*RJRX31)/RJDET1}
-.param RJTC31={RJG1-RJTP31-RJTN31}
-.param RJTS31={RJTP31-RJTN31}
-.param RJLP31={log(max(abs(RJTP31),1e-30)/max(RJMP1,1e-30))}
-.param RJLN31={log(max(abs(RJTN31),1e-30)/max(RJMN1,1e-30))}
-.param RJLC31={log(max(abs(RJTC31),1e-30)/max(RJMC1,1e-30))}
-.param RJLS31={log(max(abs(RJTS31),1e-30)/max(RJMS1,1e-30))}
-.param RJMM31={RJEP1*RJLP31*RJLP31+RJEN1*RJLN31*RJLN31+RJEC1*RJLC31*RJLC31+RJES1*RJLS31*RJLS31}
-.param RJTI31={RJDP1*abs(RJTP31)+RJDN1*abs(RJTN31)+RJDC1*abs(RJTC31)}
-.param RJCO31={RJMM31+(1)*1e-6*RJTI31/RJMXY1}
-.param RJRX41={RJCX1+RJQX1*(RJFX1*(-1)+(1-RJFX1)*RJSX1)*RJMX1}
-.param RJRY41={RJCY1+RJQY1*(RJFY1*(-1)+(1-RJFY1)*RJSY1)*RJMY1}
-.param RJTP41={(RJRX41*RJBY1-RJRY41*RJBX1)/RJDET1}
-.param RJTN41={(RJAX1*RJRY41-RJAY1*RJRX41)/RJDET1}
-.param RJTC41={RJG1-RJTP41-RJTN41}
-.param RJTS41={RJTP41-RJTN41}
-.param RJLP41={log(max(abs(RJTP41),1e-30)/max(RJMP1,1e-30))}
-.param RJLN41={log(max(abs(RJTN41),1e-30)/max(RJMN1,1e-30))}
-.param RJLC41={log(max(abs(RJTC41),1e-30)/max(RJMC1,1e-30))}
-.param RJLS41={log(max(abs(RJTS41),1e-30)/max(RJMS1,1e-30))}
-.param RJMM41={RJEP1*RJLP41*RJLP41+RJEN1*RJLN41*RJLN41+RJEC1*RJLC41*RJLC41+RJES1*RJLS41*RJLS41}
-.param RJTI41={RJDP1*abs(RJTP41)+RJDN1*abs(RJTN41)+RJDC1*abs(RJTC41)}
-.param RJCO41={RJMM41+(1)*1e-6*RJTI41/RJMXY1}
-.param RJSGX1={min(RJCO11,RJCO21)<=min(RJCO31,RJCO41) ? 1 : -1}
-.param RJSA1={RJCO11<=RJCO21 ? 1 : -1}
-.param RJSB1={RJCO31<=RJCO41 ? 1 : -1}
-.param RJSGY1={0.5*(1+RJSGX1)*RJSA1+0.5*(1-RJSGX1)*RJSB1}
-.param RJRX1={RJCX1+RJQX1*(RJFX1*(RJSGX1)+(1-RJFX1)*RJSX1)*RJMX1}
-.param RJRY1={RJCY1+RJQY1*(RJFY1*(RJSGY1)+(1-RJFY1)*RJSY1)*RJMY1}
-.param RJTP1={(RJRX1*RJBY1-RJRY1*RJBX1)/RJDET1}
-.param RJTN1={(RJAX1*RJRY1-RJAY1*RJRX1)/RJDET1}
-.param RJTC1={RJG1-RJTP1-RJTN1}
-.param RJTS1={RJTP1-RJTN1}
-.param TP1={RJTP1}
-.param TN1={RJTN1}
-.param TC1={RJTC1}
-.param TS1={RJTS1}
+.param RJRY1={RJYN1*RJVN1+RJYC1*(RJG1-RJVC1)+RJYS1*RJVS1}
+.param RJD1={RJAX1*RJBY1-RJAY1*RJBX1}
+.param TP1={(RJRX1*RJBY1-RJRY1*RJBX1)/RJD1}
+.param TN1={(RJAX1*RJRY1-RJAY1*RJRX1)/RJD1}
+.param TC1={RJG1-TP1-TN1}
+.param TS1={TP1-TN1}
 .param RJP0={TP0}
 .param RJP1={TP1}
 .param RJN0={TN0}
@@ -727,7 +536,7 @@ Glkn outn vee outn nref 1e-8
 + A0=100k GBW=100Meg SR=200Meg FP2=0 FP3=0
 + VOS=1m IB=2u IOS=0.1u
 + RID=1Meg CID=1p RIC=200Meg CIC=1p
-+ CMRR=0 PSRR=0 PSRRP=0 PSRRN=0 FCMRR=0 FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=5 VEEN=-5 KREF=0.5
++ CMRR=31.6k PSRR=10k PSRRP=0 PSRRN=0 FCMRR=0 FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=5 VEEN=-5 KREF=0.5
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=5n FCEN=1k INOISE=1p FCIN=0
 + ICCQ=10m VHD=1.2 VLD=1.2 ICMHI=1.5 ICMLO=1 VK=0.1

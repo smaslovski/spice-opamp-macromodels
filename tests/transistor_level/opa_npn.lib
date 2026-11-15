@@ -1,32 +1,34 @@
 * Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
 * A: bipolar op amp with an npn input pair, +/-15 V
 * pins: inp inn vcc vee out
+* Bipolar substrates are tied to vee, the most negative supply (a 3-terminal BJT
+* would put its substrate capacitance CJS on node 0, i.e. on circuit ground).
 .subckt OPA_NPN inp inn vcc vee out
 * tail: npn current source 20 uA to vee
-Q10 t b10 r10 QN
+Q10 t b10 r10 vee QN
 R10 r10 vee 10k
-Q11 b10 b10 r11 QN
+Q11 b10 b10 r11 vee QN
 R11 r11 vee 10k
 Ib  vcc b10 20u
 * input pair (inn on Q1, inp on Q2) with pnp mirror load
-Q1 c1 inn t QN
-Q2 c2 inp t QN
-Q3 c1 c1 vcc QP
-Q4 c2 c1 vcc QP
+Q1 c1 inn t vee QN
+Q2 c2 inp t vee QN
+Q3 c1 c1 vcc vee QP
+Q4 c2 c1 vcc vee QP
 * second stage: pnp common emitter, Miller capacitor, current-source load
-Q5 o2 c2 vcc QP
+Q5 o2 c2 vcc vee QP
 Cc c2 o2 30p
-Q12 ob b12 r12 QN 10
+Q12 ob b12 r12 vee QN 10
 R12 r12 vee 1k
 * separate bias for Q12, so that its saturation cannot starve the tail mirror
 Ib2 vcc b12 20u
-Q13 b12 b12 r13 QN
+Q13 b12 b12 r13 vee QN
 R13 r13 vee 10k
 * class-AB output with two bias diodes
 D1 o2 m DD
 D2 m ob DD
-Q7 vcc o2 e7 QN 10
-Q8 vee ob e8 QP 10
+Q7 vcc o2 e7 vee QN 10
+Q8 vee ob e8 vee QP 10
 R7 e7 out 25
 R8 e8 out 25
 .ends

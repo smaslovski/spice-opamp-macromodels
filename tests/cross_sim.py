@@ -47,7 +47,9 @@ CASES = {
                                            ('vlin', 'dc', 'V(out)@10', 1e-5), ('ipr', 'dc', 'I(Vs)@-14.5', 1e-4)]),
     'dc_rrx': ('opamp_full.lib', SUP15 + "Vin in 0 13.5\nVs in inp 0\nX1 inp out vcc vee out OPAMP_FULL PARAMS: "
                "ICMHI=-0.1 ICMLO=-0.1 VHD=0.05 VLD=0.05 VCMT=1.5 VKT=0.1 DVOST=1m DIBT=-200n\nRL out 0 100k\n",
-               ".dc Vin 13.3 13.7 0.1", [('vos', 'dc', 'V(out)@13.5', 1e-5), ('ib', 'dc', 'I(Vs)@13.6', 3e-3)]),
+               # ib: PSpice's RELTOL = 1e-3 applies to the largest branch current at the input
+               # node (~0.2 uA here), i.e. ~2e-10 A, about 4e-3 of the 52 nA pin current
+               ".dc Vin 13.3 13.7 0.1", [('vos', 'dc', 'V(out)@13.5', 1e-5), ('ib', 'dc', 'I(Vs)@13.6', 1e-2)]),
     'ac_inv': ('opamp_full.lib', SUP15 + "Vin in 0 DC 0 AC 1\nR1 in m 1k\nR2 m out 10k\n"
                "X1 0 m vcc vee out OPAMP_FULL\n", ".ac dec 50 10 100Meg",
                [('g10k', 'ac', 'V(out)@10k', 1e-3), ('g100k', 'ac', 'V(out)@100k', 1e-3),
@@ -55,11 +57,17 @@ CASES = {
     'ac_psrr': ('opamp_full.lib', "Vcc vcc 0 DC 15 AC 1\nVee vee 0 -15\nX1 0 out vcc vee out OPAMP_FULL\n",
                 ".ac dec 20 10 10Meg", [('ps1k', 'ac', 'V(out)@1k', 1e-3), ('ps100k', 'ac', 'V(out)@100k', 1e-3)]),
     'ac_psrrp2': ('opamp_full.lib', "Vcc vcc 0 DC 15 AC 1\nVee vee 0 -15\n"
-                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k\n",
+                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: PSRRP=31.6k PSRRN=31.6k FPSRRP=10 FPSRRN=1k\n",
                   ".ac dec 20 10 10Meg", [('psp10k', 'ac', 'V(out)@10k', 1e-3)]),
     'ac_psrrn2': ('opamp_full.lib', "Vcc vcc 0 15\nVee vee 0 DC -15 AC 1\n"
-                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: FPSRRP=10 FPSRRN=1k\n",
+                  "X1 0 out vcc vee out OPAMP_FULL PARAMS: PSRRP=31.6k PSRRN=31.6k FPSRRP=10 FPSRRN=1k\n",
                   ".ac dec 20 10 10Meg", [('psn10k', 'ac', 'V(out)@10k', 1e-3)]),
+    'ac_float': ('opamp_full.lib', "Vfl c 0 DC 0 AC 1\nVsp vcc c 15\nVsn c vee 15\nVin in c DC 0 AC 1\n"
+                 "X1 in out vcc vee out OPAMP_FULL\nRL out c 2k\n", ".ac dec 20 10 10Meg",
+                 [('fl1k', 'ac', 'V(out)@1k', 1e-3), ('fl1m', 'ac', 'V(out)@1Meg', 1e-3)]),
+    'ac_routdc': ('opamp_full.lib', SUP15 + "X1 0 out vcc vee out OPAMP_FULL PARAMS: A0=8.6k ROUT=33 ROUTDC=2850 VXO=0\n"
+                  "Iz 0 out DC 0 AC 1\n", ".ac dec 20 1 10Meg",
+                  [('zc1', 'ac', 'V(out)@1', 1e-3), ('zc1k', 'ac', 'V(out)@1k', 1e-3)]),
     'tran_slew': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(-5 5 1u 1n 1n 50u 100u)\n"
                   "X1 in out vcc vee out OPAMP_FULL\n", ".tran 10n 40u",
                   [('t90', 'tran', 'V(out)=4', 1e-3), ('vend', 'tran', 'V(out)@30u', 1e-4)]),
@@ -86,6 +94,10 @@ CASES = {
     'fd_ac': ('fdopamp_full.lib', SUP5 + "Vip ip 0 DC 0 AC 0.5\nVin in 0 DC 0 AC -0.5\n" + FDGAIN4 +
               "X1 a b vcc vee outp outn 0 FDOPAMP_FULL\n", ".ac dec 50 1k 1G",
               [('g1m', 'ac', 'V(outp)@1Meg', 1e-3), ('g20m', 'ac', 'V(outp)@20Meg', 1e-2)]),
+    'fd_routdc': ('fdopamp_full.lib', SUP5 + "Vip ip 0 0\nVin in 0 0\n" + FDGAIN4 +
+                  "X1 a b vcc vee outp outn 0 FDOPAMP_FULL PARAMS: ROUTDC=10k\nIzp 0 outp DC 0 AC 0.5\n"
+                  "Izn outn 0 DC 0 AC 0.5\nRL outp outn 1k\n", ".ac dec 20 10 100Meg",
+                  [('zd1k', 'ac', 'V(outp)@1k', 1e-3), ('zd1m', 'ac', 'V(outp)@1Meg', 1e-3)]),
     'fd_tran': ('fdopamp_full.lib', SUP5 + "Vip ip 0 SIN(0 2 100k)\nVin in 0 SIN(0 -2 100k)\nVocm vocm 0 0.5\n" +
                 FDGAIN4 + "X1 a b vcc vee outp outn vocm FDOPAMP_FULL\n", ".tran 5n 20u",
                 [('opmax', 'tran', 'max V(outp)', 2e-3), ('opmin', 'tran', 'min V(outp)', 2e-3)]),

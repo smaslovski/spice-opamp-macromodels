@@ -11,7 +11,7 @@
 *  b) rail-to-rail input crossover (VCMT, VKT, DVOST): a CMOS follower on a
 *     single 5 V supply, whose input range extends 0.1 V beyond both rails.
 *     The input offset steps by DVOST = -0.6 mV where the input moves from the
-*     p-pair to the n-pair, 1.3 V below vcc (the 110 dB CMRR adds only a
+*     p-pair to the n-pair, 1.3 V below vcc (the 130 dB CMRR adds only a
 *     few uV across the range).
 .include ../models/opamp_full.lib
 Vcc vcc 0 15

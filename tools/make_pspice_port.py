@@ -187,6 +187,14 @@ def convert(name, inline):
             n_split += 1
     if n_cmd == 0 or n_split != 2 * n_cmd:
         sys.exit(f'{name}: output-stage rescaling failed ({n_cmd}, {n_split})')
+    # the ROUTDC sources read the command current, which is in mA here
+    n_odc = 0
+    for k, ln in enumerate(lines):
+        if ln is not None and re.match(r'^God[cd] ', ln):
+            lines[k] = re.sub(r'V\((nic\w*)\)', r'1e-3*V(\1)', ln)
+            n_odc += 1
+    if n_odc != (2 if 'FDOPAMP' in name.upper() else 1):
+        sys.exit(f'{name}: ROUTDC rescaling failed ({n_odc})')
     txt = '\n'.join(l for l in lines if l is not None)
     # PSpice: every node needs two connections; a node read only inside VALUE={}
     # has one. The 1e15 ohm partners change the 1 kohm noise by ~1e-12.
@@ -201,8 +209,8 @@ def convert(name, inline):
     txt = txt.replace('+ VCMN={0.5*(VCCN+VEEN)}', '+ VCMN=1e30')
     txt, k = re.subn(r'(\.param PI2=6\.283185307\n)',
                      r'\1.param VCMX={IF(VCMN>1e29, 0.5*(VCCN+VEEN), VCMN)}   ; VCMN=1e30: mid-supply\n', txt)
-    txt, j = re.subn(r'(Ecm ncm0 0 VALUE=\{(?:\(0\.5\*\(V\(inp\)\+V\(inn\)\)\)|V\(nvc\)))-VCMN\}', r'\1-VCMX}', txt)
-    if not (n >= 1 and k == n - (1 if 'FDOPAMP_FULL' in txt else 0) and j == 1):
+    txt, j = re.subn(r'(\.param DV[PN]N=\{(?:VCCN|VEEN)-)VCMN\}', r'\1VCMX}', txt)
+    if not (n >= 1 and k == n - (1 if 'FDOPAMP_FULL' in txt else 0) and j == 2):
         sys.exit(f'{name}: VCMN rewrite failed ({n}, {k}, {j})')
     for a, b in HEADER_SUB:
         if a not in txt:

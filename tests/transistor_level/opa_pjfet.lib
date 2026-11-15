@@ -1,31 +1,33 @@
 * Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
 * B: JFET op amp with a p-JFET input pair (TL071-like input stage), +/-15 V
+* Bipolar substrates are tied to vee, the most negative supply (a 3-terminal BJT
+* would put its substrate capacitance CJS on node 0, i.e. on circuit ground).
 .subckt OPA_PJFET inp inn vcc vee out
 * tail: pnp current source 200 uA from vcc
-Q10 t b10 r10 QP
+Q10 t b10 r10 vee QP
 R10 vcc r10 2k
-Q11 b10 b10 r11 QP
+Q11 b10 b10 r11 vee QP
 R11 vcc r11 2k
 Ib  b10 vee 200u
 * input pair (inn on J1, inp on J2) with npn mirror load
 J1 d1 inn t JP
 J2 d2 inp t JP
-Q3 d1 d1 vee QN
-Q4 d2 d1 vee QN
+Q3 d1 d1 vee vee QN
+Q4 d2 d1 vee vee QN
 * second stage: npn common emitter, Miller capacitor, current-source load
-Q5 o2 d2 vee QN
+Q5 o2 d2 vee vee QN
 Cc d2 o2 15p
-Q12 ot b12 r12 QP 5
+Q12 ot b12 r12 vee QP 5
 R12 vcc r12 400
 * separate bias for Q12, so that its saturation cannot starve the tail mirror
 Ib2 b12 vee 200u
-Q13 b12 b12 r13 QP
+Q13 b12 b12 r13 vee QP
 R13 vcc r13 2k
 * class-AB output: bias diodes from ot down to o2
 D1 ot m DD
 D2 m o2 DD
-Q7 vcc ot e7 QN 10
-Q8 vee o2 e8 QP 10
+Q7 vcc ot e7 vee QN 10
+Q8 vee o2 e8 vee QP 10
 R7 e7 out 25
 R8 e8 out 25
 .ends

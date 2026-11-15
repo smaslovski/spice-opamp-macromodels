@@ -1,0 +1,59 @@
+* D: the uA741 at transistor level, +/-15 V
+* Source: the 741 circuit of A. S. Sedra and K. C. Smith, Microelectronic Circuits
+* (Fig. 10.1 there), as given in the SPICE companion of G. W. Roberts and A. S. Sedra,
+* chapter "Analog Integrated Circuits", Fig. 10.2 (deck) and Table 10.1 (device
+* parameters, after P. R. Gray and R. G. Meyer, Analysis and Design of Analog
+* Integrated Circuits, 1984). Transcribed with the original node numbers; only the
+* subcircuit and model names changed. Generic textbook devices: this is the published
+* reference circuit, not a characterized chip. No offset-null pins, no input protection.
+* pins: inp inn vcc vee out (Q1 base = non-inverting input)
+* Bipolar substrates are tied to 26 (vee), the most negative supply (a 3-terminal BJT
+* would put its substrate capacitance CJS on node 0, i.e. on circuit ground).
+.subckt OPA_UA741 1 2 25 26 22
+* input stage
+Q1 4 1 12 26 QN741
+Q2 4 2 13 26 QN741
+Q3 7 3 12 26 QP741
+Q4 8 3 13 26 QP741
+Q5 7 9 10 26 QN741
+Q6 8 9 11 26 QN741
+Q7 25 7 9 26 QN741
+Q8 4 4 25 26 QP741
+Q9 3 4 25 26 QP741
+R1 10 26 1k
+R2 11 26 1k
+R3 9 26 50k
+* second stage
+Q13B 16 6 25 26 QP741 0.75
+Q16 25 8 14 26 QN741
+Q17 16 14 15 26 QN741
+R8 15 26 100
+R9 14 26 50k
+Cc 8 16 30p
+* output stage
+Q13A 17 6 25 26 QP741 0.25
+Q14 25 17 23 26 QN741 3
+Q18 17 18 19 26 QN741
+Q19 17 17 18 26 QN741
+Q20 26 19 21 26 QP741 3
+Q23 26 16 19 26 QP741
+R6 22 23 27
+R7 21 22 27
+R10 18 19 40k
+* short-circuit protection
+Q15 17 23 22 26 QN741
+Q21 20 21 22 26 QP741
+Q22 8 20 26 26 QN741
+Q24 20 20 26 26 QN741
+R11 20 26 50k
+* bias
+Q10 3 5 24 26 QN741
+Q11 5 5 26 26 QN741
+Q12 6 6 25 26 QP741
+R4 24 26 5k
+R5 6 5 39k
+.model QN741 NPN (BF=200 BR=2.0 VAF=125 IS=10f TF=0.35n RB=200 RC=200 RE=2 CJE=1.0p
++ VJE=0.70 MJE=0.33 CJC=0.3p VJC=0.55 MJC=0.5 CJS=3.0p VJS=0.52 MJS=0.5)
+.model QP741 PNP (BF=50 BR=4.0 VAF=50 IS=10f TF=30n RB=300 RC=100 RE=10 CJE=0.3p
++ VJE=0.55 MJE=0.5 CJC=1.0p VJC=0.55 MJC=0.5 CJS=3.0p VJS=0.52 MJS=0.5)
+.ends OPA_UA741

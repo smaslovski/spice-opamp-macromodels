@@ -26,9 +26,12 @@ models well or at all: noise, temperature behaviour, and the fully differential
 
 ## Version and updates
 
-- Skill revision: **1.0** (2026-11-11)
-- For model version: **1.5** or **1.5.1** of `OPAMP_FULL` (the `Version` line in the header
-  of `opamp_full.lib`)
+- Skill revision: **1.2** (2026-11-15)
+- For model version: **1.6** of `OPAMP_FULL` (the `Version` line in the header
+  of `opamp_full.lib`). For 1.5.x, the values are the same, except that 1.5.x has
+  no `ROUTDC` (leave it out and use the loaded gain for `A0`); there `FCMRR`,
+  `FPSRRP` and `FPSRRN` of 0 mean scaled defaults, so always write them out (as
+  this file does).
 - Repository: https://github.com/smaslovski/spice-opamp-macromodels
 - Latest revision of this file:
   https://github.com/smaslovski/spice-opamp-macromodels/blob/master/skills/model-to-params/SKILL.md
@@ -101,7 +104,7 @@ evaluates; leave the "derived" lines as they are.
 
 <!-- BEGIN header -->
 ```spice
-* <PART> characterization deck <AC|FAST|SLOW> (model-to-params skill rev 1.0)
+* <PART> characterization deck <AC|FAST|SLOW> (model-to-params skill rev 1.2)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -203,6 +206,14 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 8: open-loop differential gain without load (with 1: the DC output resistance)
+Va8 a8 mid AC 0.5
+X8 a8 n8 vcc vee o8 DUT
+Ed8 d8 0 o8 mid 1
+Rd8 d8 s8 1e18
+Cd8 s8 0 1
+E8 n8x mid s8 0 1
+Vb8 n8 n8x AC 0.5 180
 * 6, 7: input impedance. The + pin is fed by an AC current of 1 A; its DC bias
 *    comes from Gb6 (Gb7), a 1 mS conductance to VCM through the same low-pass.
 * 6: - pin at VCM for AC: the + pin sees the differential and its own
@@ -349,6 +360,7 @@ ac dec 20 1m 100G
 let ag = vdb(o1)
 let ph = 180/pi*cph(v(o1))
 meas ac a0_db find ag at=1m
+meas ac a0u_db find vdb(o8) at=1m
 meas ac fu when ag=0
 meas ac ph_fu find ph when ag=0
 meas ac f40 when ag=40
@@ -374,6 +386,7 @@ meas ac fpsn3 when psn=$&x3 fall=1
 meas ac fpsn20 when psn=$&x20 fall=1
 let fz1 = gbwn/100
 let fz2 = gbwn/10
+meas ac zo_dc find vm(o5) at=1m
 meas ac zo_a find vm(o5) at=$&fz1
 meas ac zo_b find vm(o5) at=$&fz2
 meas ac zo_c find vm(o5) at=$&gbwn
@@ -426,6 +439,10 @@ let f = 4.9*ts
 let g = 3*ts
 meas tran vo2_lo avg v(o2) from=$&a to=$&b
 meas tran vo2_hi avg v(o2) from=$&c to=$&d
+let tj = 1.011*ts
+meas tran vj_r find v(o2) at=$&tj
+let tj = 3.012*ts
+meas tran vj_f find v(o2) at=$&tj
 meas tran ss_lo avg v(o3) from=$&a to=$&b
 meas tran ss_hi avg v(o3) from=$&c to=$&d
 meas tran ss_max max v(o3) from=$&ts to=$&g
@@ -545,6 +562,7 @@ AC:
 ```spice
 .ac dec 20 1m 100G
 .meas ac a0_db find mag(V(o1)) at=1m
+.meas ac a0u_db find mag(V(o8)) at=1m
 .meas ac fu when mag(V(o1))=1
 .meas ac ph_fu find V(o1) when mag(V(o1))=1
 .meas ac f40 when mag(V(o1))=100
@@ -559,6 +577,7 @@ AC:
 .meas ac psrrn_db find mag(V(o1)/V(o4)) at=1m
 .meas ac fpsn3 when mag(V(o1)/V(o4))=psrrn_db/sqrt(2) fall=1
 .meas ac fpsn20 when mag(V(o1)/V(o4))=psrrn_db/10 fall=1
+.meas ac zo_dc find mag(V(o5)) at=1m
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}
 .meas ac zo_c find mag(V(o5)) at={GBWN}
@@ -593,6 +612,8 @@ FAST:
 .meas tran t85ri when V(o2i)={VCM+0.35*VSTEP} td={2*TS} rise=1
 .meas tran vo2_lo avg V(o2) from={0.5*TS} to={0.9*TS}
 .meas tran vo2_hi avg V(o2) from={2.5*TS} to={2.9*TS}
+.meas tran vj_r find V(o2) at={1.011*TS}
+.meas tran vj_f find V(o2) at={3.012*TS}
 .meas tran ss_lo avg V(o3) from={0.5*TS} to={0.9*TS}
 .meas tran ss_hi avg V(o3) from={2.5*TS} to={2.9*TS}
 .meas tran ss_max max V(o3) from={TS} to={3*TS}
@@ -684,7 +705,7 @@ AC:
 ```spice
 .OPTIONS NUMDGT=8 NOPAGE
 .AC DEC 10 1m 100G
-.PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4)
+.PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
 ```
 <!-- END pspice_ac -->
@@ -751,12 +772,14 @@ small-signal output resistance is doubled at idle, which the gain test sees).
 | Param | Formula | Notes |
 |---|---|---|
 | `ROUT` | `zo_b` | open-loop output impedance at GBWN/10. If `zo_a` and `zo_c` differ from it by more than 2×, say so. |
-| `A0` | `10^(a0_db/20) * (RL + REFF)/RL` | `a0_db`: gain at 1 mHz, with the load. |
+| `ROUTDC` | `RL*(10^((a0u_db - a0_db)/20) - 1) - REFF` | the extra open-loop output resistance at DC, from the gain at 1 mHz without load (`a0u_db`) and with it (`a0_db`), both at idle. Set it only if it exceeds 0.1·`ROUT`; otherwise leave it out (0). Cross-check: `zo_dc - ROUT` (\|Zout\| at 1 mHz, at the DC load ILOAD); if the two differ by more than 30 %, the output resistance depends on the load current: say so and keep the idle value. (Model 1.6; for 1.5.x leave it out and use the loaded gain for A0.) |
+| `A0` | `10^(a0_db/20) * (RL + REFF + ROUTDC)/RL` | `a0_db`: gain at 1 mHz, with the load; `A0` is the unloaded gain (`10^(a0u_db/20)` when `ROUTDC` is set). |
 | `FP2`, `FP3`, `GBW` | see below | from `fu` and `ph_fu` |
 | `CMRR` | `10^(cmrr_db/20)` | DC CMRR (at 1 mHz). Above 160 dB (likewise for PSRR) the vendor model has no such coupling: take CMRR and FCMRR from the datasheet. |
 | `FCMRR` | `fcm20/10` | the frequency where the CMRR has fallen 20 dB, divided by 10 (single-zero roll-off). If `fcm20` failed, use `fcm3`; if both failed, the CMRR is flat: use `1G`. If `fcm20/fcm3` is not between 7 and 14, the roll-off is not single-zero: still use `fcm20/10` and say so. |
 | `PSRRP`, `FPSRRP` | `10^(psrrp_db/20)`, `fpsp20/10` | as CMRR; positive supply |
 | `PSRRN`, `FPSRRN` | `10^(psrrn_db/20)`, `fpsn20/10` | negative supply. Give `FPSRRP` and `FPSRRN`, not `FPSRR`. |
+| | | In model 1.6 only two of CMRR, PSRR+ and PSRR− are independent (a part without a ground pin: the three errors per volt add up to 1/A0 unloaded). With all three given, the model uses PSRRP and PSRRN exactly and derives CMRR. A vendor model or a part measured here obeys the identity too, with its unloaded gain, which is the model's A0 when `ROUTDC` is set. `python3 tools/rejection.py <params>` shows the derived CMRR; report it with the measured one. |
 | `RIC` | `1/Gc0` | `Gc0 = zc_re0/(zc_re0^2 + zc_im0^2)`; one pin, common mode, 1 mHz. Above 10 TΩ it is only a lower limit; cap at `1e15`. |
 | `RID` | `1/(Gd0 - Gc0)` | `Gd0 = zd_re0/(zd_re0^2 + zd_im0^2)`. If `Gd0 - Gc0 <= 0` or the result exceeds 1 TΩ: `1T`. |
 | `CIC` | `Bc/(2*pi*f10)` | `Bc = -zc_im/(zc_re^2 + zc_im^2)`, `f10 = GBWN/10` |
@@ -800,15 +823,18 @@ step response).
 | `VCLMP`, `RCLMP` | see below | input clamp |
 | `PRHI`, `PRLO` | see "SLOW deck" | slope of the reversed output |
 
-**Follower jump (KJUMP).** From the follower's step (not the inverter's):
-`sr = 0.35*VSTEP/(t85r - t50r)`, `jr = 0.5 - sr*(t50r - 1.0005*TS)/VSTEP`
-(rising edge); `sf = 0.35*VSTEP/(t85f - t50f)`, `jf = 0.5 - sf*(t50f - 3.0015*TS)/VSTEP`
-(falling edge). These are the fractions of the step that the output jumps at
-the input edge (the slewing line extrapolated back to the edge). If the larger
-is at least 0.05: `KJUMP = +jr*(RL + ROUT)/RL` if `jr` is larger, else
-`KJUMP = -jf*(RL + ROUT)/RL`. Otherwise `KJUMP` stays 0. If the part has an
-input clamp (below), the clamp current drags a follower's output during a large
-step: leave `KJUMP = 0` and say so.
+**Follower jump (KJUMP).** From the follower's step (not the inverter's), with its
+own slew rates `sr = 0.35*VSTEP/(t85r - t50r)` and `sf = 0.35*VSTEP/(t85f - t50f)`:
+`jr = (vj_r - vo2_lo - sr*0.0105*TS)/VSTEP` (rising edge) and
+`jf = (vo2_hi - vj_f - sf*0.0105*TS)/VSTEP` (falling edge). `vj_r` and `vj_f` are the
+output TS/100 after each input edge; `jr` and `jf` are the fractions of the step that
+the output jumps at the edge, beyond what slewing gives in that time. If the larger is
+at least 0.05: `KJUMP = +jr*(RL + ROUT)/RL` if `jr` is larger, else
+`KJUMP = -jf*(RL + ROUT)/RL`. Otherwise `KJUMP` stays 0. (Do not extrapolate the
+slewing line back to the edge instead: a slew rate that falls along the edge then
+looks like a jump.) If the part has an input clamp (below),
+the clamp current drags a follower's output during a large step: leave `KJUMP = 0`
+and say so.
 
 **Input clamp.** A clamp is present if `icl1 > 1u + 10*|IB|` (A). Then, with
 `L1 = VT*ln(icl1/1e-15)`, `L2 = VT*ln(icl2/1e-15)`,
@@ -854,7 +880,9 @@ edge and `-1` for the bottom; `A0` is the value found above.
    tracking error has grown by 10 mV at the input `vf1` (output `of1`) and by
    100 mV at `vf2` (`of2`). With `ost = (VCC - W) - eft0` (bottom:
    `(VEE + W) - efb0`) and `d1 = 0.01*s`, `d2 = 0.1*s`:
-   - relative gain `w_k = of_k/(A0*d_k + ost)`, `z_k = ln(w_k/(1 - w_k))`;
+   - relative gain `w_k = (of_k - VREF)/(AF*d_k + ost - VREF)`, `z_k = ln(w_k/(1 - w_k))`,
+     where `VREF = (VCC + VEE)/2` (the model's gain stages are referred to
+     mid-supply) and `AF = A0*RL/(RL + ROUT + ROUTDC)` is the gain into RL;
    - effective input `V_k = (vf_k + of_k)/2 - s*0.5*sqrt((vf_k - of_k)^2 + 1e-4)`;
    - edge width `VK_e = 2*s*(V_2 - V_1)/(z_1 - z_2)`; if it is below 0.005, use
      0.005 (the follower stops abruptly; the sharpest knee kept).
@@ -893,19 +921,21 @@ Each `.PRINT` gives a table in the `.out` file: a header line starting with
 `FREQ` or `TIME`, the column names, then the rows. Interpolate linearly between
 rows (for frequencies: linear in log f). The quantities named above are:
 
-- AC (first row = 1 mHz): `a0_db` = `VDB(o1)` in the first row; `fu`, `f40`,
+- AC (first row = 1 mHz): `a0_db` = `VDB(o1)` in the first row, `a0u_db` = `VDB(o8)` in
+  the first row; `fu`, `f40`,
   `f20`: where `VDB(o1)` crosses 0, 40, 20 dB; `ph_fu` = `VP(o1)` at `fu` (if the
   phase column wraps through ±180°, unwrap it first). CMRR(f) =
   `VDB(o1) - VDB(o2)` per row: `cmrr_db` in the first row, `fcm3`/`fcm20` where it
   has fallen 3/20 dB. PSRR+ with `VDB(o3)`, PSRR− with `VDB(o4)`. `zo_a/b/c` =
-  `VM(o5)` at GBWN/100, GBWN/10, GBWN. `zd_re0`, `zd_im0` = `VR(p6)`, `VI(p6)` in
-  the first row, `zd_re`, `zd_im` at GBWN/10; `zc_*` likewise with `p7`.
+  `VM(o5)` at GBWN/100, GBWN/10, GBWN; `zo_dc` = `VM(o5)` in the first row.
+  `zd_re0`, `zd_im0` = `VR(p6)`, `VI(p6)` in the first row, `zd_re`, `zd_im` at GBWN/10; `zc_*` likewise with `p7`.
 - FAST: averages over a window are the mean of the rows in it. `vos` =
   `V(o1,mid)`, `ibp` = `I(Vp1)`, `ibn` = `I(Vn1)`, `iq` = −`I(Vcc1)`, all over
   0.5·TS…0.9·TS. `t50ri`: first time after 2·TS where `V(o2i)` rises through VCM;
   `t85ri`: through VCM + 0.35·VSTEP; `t50fi`, `t85fi`: first falls through VCM and
   VCM − 0.35·VSTEP (from 0). `t50r`, `t85r`, `t50f`, `t85f` likewise with `V(o2)`
-  (rising from 0, falling after 2·TS). `ss_lo`, `ss_hi`: `V(o3)` over 0.5…0.9·TS
+  (rising from 0, falling after 2·TS). `vj_r`, `vj_f`: `V(o2)` at 1.011·TS and
+  3.012·TS. `ss_lo`, `ss_hi`: `V(o3)` over 0.5…0.9·TS
   and 2.5…2.9·TS; `ss_max` = max of `V(o3)` over TS…3·TS, `ss_min` = min over
   3·TS…5·TS (the table is coarse: low confidence). `voh_rl`, `vol_rl`: `V(o4)` over
   2…2.4·TS and 4.5…4.9·TS; `voh_nl`, `vol_nl`: `V(o5)` likewise; `isrc`, `isnk`:
@@ -1013,5 +1043,5 @@ and run the three decks once more. The logs of the vendor model and of the fit
 should agree on gain, phase at fu, CMRR, offset, bias current, supply current,
 swing, slew rates, follower edges (`vf1t`, `vf1b`), flips and reversed slopes;
 compare them in a short table. The repository's
-`tests/model_to_params_check.py` does this for three transistor-level reference
-op amps.
+`tests/model_to_params_check.py` does this for four transistor-level reference
+op amps, one of them the textbook µA741.

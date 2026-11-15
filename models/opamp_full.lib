@@ -3,16 +3,17 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.5.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.6 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee out
 *
 * LINEAR EFFECTS
 *   - finite DC gain A0, dominant pole, GBW, two extra poles (FP2, FP3)
 *   - differential / common-mode input R and C (noiseless)
-*   - CMRR and PSRR(+/-) with frequency roll-off (a zero in the coupling gain;
-*     optional separate PSRR+/PSRR- corners FPSRRP, FPSRRN)
-*   - output resistance (ROUT) and output capacitance
+*   - CMRR, PSRR, PSRR+ and PSRR- with frequency roll-off, consistent with a
+*     part that has no ground pin (see "Supply and common-mode rejection")
+*   - output resistance (ROUT), optional DC output resistance falling above
+*     the dominant pole (ROUTDC), and output capacitance
 *   - input voltage noise (white + 1/f) and input current noise (white + 1/f,
 *     FCIN = current-noise 1/f corner, independent on each input; 0 = off)
 * NONLINEAR EFFECTS
@@ -38,6 +39,31 @@
 * Units: SR in V/s (0.5Meg = 0.5 V/us). PSRR/CMRR as ratios (31.6k = 90 dB).
 *
 * Notes
+*   - No ground node: no element connects to node 0. Pin currents return to
+*     vcc or vee, and internal voltages are referred to the pins (the gain
+*     stages to nref = vee + KREF*(vcc-vee)). Results do not depend on which
+*     node of the circuit is grounded; floating supplies work.
+*   - Supply and common-mode rejection. Without a ground pin, the errors
+*     referred to the input per volt of vcc (T_P), of vee (T_N) and of the
+*     input common mode (T_C) obey T_P + T_N + T_C = 1/A(s) at every
+*     frequency (1/A = 1/A0 + s/(2*pi*GBW) below FP2). PSRR (both supplies
+*     moved apart, per volt of each) is 1/|T_P - T_N|. So only two of CMRR,
+*     PSRR, PSRRP, PSRRN are independent, at DC and again for the slopes above
+*     the corners. Rules (each ratio 0 = not given):
+*       - the first two given in the order PSRRP, PSRRN, CMRR, PSRR are used
+*         exactly, the others are derived. Fewer than two: CMRR = 31.6k, then
+*         PSRR = 31.6k are added.
+*       - a slope is given when its corner is set (FCMRR; FPSRR for PSRR;
+*         FPSRRP or FPSRRN, else FPSRR, for the supplies). Fewer than two given
+*         slopes: the supplies get only the coupling through the gain stage
+*         (KREF/A for vcc, (1-KREF)/A for vee).
+*       - signs (unknown in a datasheet) are chosen to match the other given
+*         values best; with none to match, the largest derived DC errors (a
+*         conservative offset) and the smallest derived slopes.
+*     A given value that the rules cannot honour is a conflict: CMRR is
+*     derived from PSRRP and PSRRN when all three are given.
+*     python3 tools/rejection.py CMRR=... PSRRP=... prints what a parameter set
+*     gives (the same rules, in Python).
 *   - VOS, the input voltage noise and the CMRR/PSRR error terms form one
 *     error voltage in series with the + input, ahead of RID (RID is driven
 *     by the internal V(vd)). So no spurious (VOS+en)/RID current flows in
@@ -51,17 +77,19 @@
 *     in PSpice 9.1 (tests/cross_sim.py; DC/AC/transient/noise agree). White
 *     e_n is passed through the E source Ewn (LTspice ignores the noise of a
 *     resistor that is read only inside a B-source expression). Nodes that
-*     otherwise see only G elements and capacitors get a 1e15 ohm DC path to
-*     ground (R*lk), which satisfies the floating-node checks of LTspice and
-*     PSpice; their effect on gain and noise is negligible.
+*     otherwise see only G elements and capacitors get a 1e15 ohm DC path
+*     (R*lk, to nref or, inside the model only, to node 0), which satisfies
+*     the floating-node checks of LTspice and PSpice; their effect on gain
+*     and noise is negligible.
 *     PSpice uses the generated port (B sources rewritten as E/G VALUE
 *     sources); HSPICE is not supported.
 *   - Bias currents: IB > 0 flows INTO the pins (NPN input); use IB < 0 for PNP.
-*   - RIC || CIC is the common-mode input impedance of EACH input pin to
-*     ground (per-pin datasheet values, e.g. "34 Mohm, 4 pF each input").
-*     With both inputs tied together the impedance is RIC/2 || 2*CIC.
-*   - VCMN: the input common-mode voltage at which VOS is specified. The CMRR
-*     error term is (Vcm - VCMN)/CMRR. The default is mid-supply.
+*   - RIC || CIC is the common-mode input impedance of EACH input pin (per-pin
+*     datasheet values, e.g. "34 Mohm, 4 pF each input"): RIC to nref (its
+*     current returns to vee), CIC half to each rail. With both inputs tied
+*     together the impedance is RIC/2 || 2*CIC.
+*   - VCMN: the input common-mode voltage at which VOS is specified (with the
+*     supplies at VCCN, VEEN). The default is mid-supply.
 *   - Differential clamp: two anti-parallel diodes between inp and inn, each
 *     with forward voltage VCLMP at 1 mA and
 *     series resistance RCLMP. The default VCLMP=100 disables it (the 741 has
@@ -73,7 +101,8 @@
 *
 * PARAMETERS  (name, unit, default, meaning)
 *  Gain and frequency response
-*   A0      V/V    200k     open-loop DC gain
+*   A0      V/V    200k     open-loop DC gain without load (with ROUTDC = 0
+*                           also the loaded gain, to within ROUT/RL)
 *   GBW     Hz     1Meg     gain-bandwidth product (unity-gain frequency of the
 *                           dominant-pole response)
 *   FP2     Hz     0        second pole; 0 = 3*GBW (3Meg at the default
@@ -100,34 +129,41 @@
 *   RID     ohm    2Meg     differential input resistance (noiseless); its
 *                           current saturates at |IB|, as in a bipolar pair
 *   CID     F      1.4p     differential input capacitance
-*   RIC     ohm    400Meg   common-mode input resistance of each input pin to
-*                           ground (noiseless)
-*   CIC     F      0.75p    common-mode input capacitance of each input pin to
-*                           ground
+*   RIC     ohm    400Meg   common-mode input resistance of each input pin
+*                           (to nref; noiseless)
+*   CIC     F      0.75p    common-mode input capacitance of each input pin
+*                           (half to each rail)
 *  Differential input clamp (two anti-parallel diodes between inp and inn;
 *  there are no clamp diodes from the inputs to the supply rails)
 *   VCLMP   V      100      forward voltage of each diode at 1 mA (set through
 *                           the emission coefficient); 100 = no clamp.
 *                           OP27-style clamp: VCLMP=0.7 RCLMP=100
 *   RCLMP   ohm    100      series resistance of each clamp diode
-*  Common-mode and supply rejection
-*   CMRR    ratio  31.6k    DC CMRR (31.6k = 90 dB)
-*   FCMRR   Hz     0        CMRR falls at 20 dB/dec above this frequency;
-*                           0 = 6.32*GBW/CMRR, so that the CMRR is 16 dB
-*                           at GBW (200 at the defaults)
-*                           Keep CMRR*FCMRR/GBW >= 3 (10 dB at GBW): the
-*                           CMRR error is in series with the input, and
+*  Common-mode and supply rejection (0 = not given; see the rules in Notes)
+*   CMRR    ratio  0        DC CMRR (31.6k = 90 dB)
+*   PSRR    ratio  0        DC PSRR with both supplies moved apart (per volt of
+*                           each supply), the usual single datasheet value
+*   PSRRP   ratio  0        DC rejection of the positive supply alone
+*   PSRRN   ratio  0        DC rejection of the negative supply alone
+*                           Defaults (nothing given): CMRR = PSRR = 31.6k,
+*                           giving PSRR+ 89 dB, PSRR- 112 dB at A0 = 200k
+*   FCMRR   Hz     0        CMRR falls at 20 dB/dec above this frequency.
+*                           Keep CMRR >= 10 dB at GBW (CMRR*FCMRR/GBW >= 3):
+*                           the CM error is in series with the input, and
 *                           below that a follower's step response rings
-*   PSRRP   ratio  31.6k    DC rejection of the positive supply
-*   PSRRN   ratio  31.6k    DC rejection of the negative supply
-*   FPSRR   Hz     0        PSRR falls at 20 dB/dec above this frequency;
-*                           0 = 1e-4*GBW (100 at the default GBW)
-*   FPSRRP  Hz     0        PSRR+ corner (positive supply); 0 = FPSRR
-*   FPSRRN  Hz     0        PSRR- corner (negative supply); 0 = FPSRR
+*   FPSRR   Hz     0        corner of PSRR, and of PSRR+/PSRR- if FPSRRP/FPSRRN
+*                           are 0
+*   FPSRRP  Hz     0        PSRR+ corner (positive supply)
+*   FPSRRN  Hz     0        PSRR- corner (negative supply)
+*   KREF    -      0.5      reference of the gain stages, nref = vee +
+*                           KREF*(vcc-vee); the supply at which the
+*                           compensation is referred couples as 1/A(s)
+*                           (in the uA741 it is vee: KREF = 0). Totals are
+*                           as specified whatever KREF is; it matters above
+*                           FP2 and for the derived quantities
 *   VCCN    V      15       nominal positive supply (PSRR reference)
 *   VEEN    V      -15      nominal negative supply (PSRR reference)
-*   VCMN    V      mid      input CM voltage at which VOS is specified; the
-*                           CMRR error is (Vcm - VCMN)/CMRR
+*   VCMN    V      mid      input CM voltage at which VOS is specified
 *  Noise
 *   ENOISE  V/rtHz 20n      white input voltage noise density
 *   FCEN    Hz     200      1/f corner of the voltage noise
@@ -163,8 +199,16 @@
 *   VHD     V      2        minimum headroom, output to vcc (swing limit)
 *   VLD     V      2        minimum headroom, output to vee (swing limit)
 *  Output stage
-*   ROUT    ohm    75       output resistance
-*   COUT    F      3p       output capacitance to ground
+*   ROUT    ohm    75       output resistance (open loop, above the dominant
+*                           pole: the datasheet's r_o)
+*   ROUTDC  ohm    0        additional open-loop output resistance at DC: the
+*                           high-impedance gain node seen through the output
+*                           stage. Zout = ROUT + ROUTDC/(1 + j*f/fd), fd =
+*                           GBW/A0. A0 is then the unloaded gain; into RL the
+*                           DC gain is A0*RL/(RL + ROUT + ROUTDC). Typically
+*                           tens of times ROUT for a simple bipolar output,
+*                           hundreds for a common-source (rail-to-rail) one
+*   COUT    F      3p       output capacitance (half to each rail)
 *   ISRC    A      25m      maximum source current
 *   ISNK    A      25m      maximum sink current
 *   VXO     V      2m       class-AB crossover dead zone: for |Iout| below about
@@ -173,19 +217,20 @@
 *==============================================================================
 
 *------------------------------------------------------------------------------
-* ZCPL : out = K * (1 + s/(2*pi*FZ)) * in      (ideal zero, exact derivative)
-* Used for CMRR(f) and PSRR(f): coupling into the input rises above FZ,
-* i.e. the rejection ratio falls at 20 dB/dec. FHI limits the derivative.
-* The derivative resistor is a noiseless VCCS.
+* ZCPL : out = K0*in + K1*d(in)/dt     (a zero of either sign, exact derivative)
+* Used for CMRR(f) and PSRR(f): the coupling into the input rises above
+* |K0/K1|/(2*pi), i.e. the rejection ratio falls at 20 dB/dec. FHI limits the
+* derivative. The derivative resistor is a noiseless VCCS. All nodes are
+* internal (computation only).
 *------------------------------------------------------------------------------
-.subckt ZCPL in out PARAMS: K=1u FZ=1k FHI=20Meg
-.param TAUZ={1/(6.283185307*FZ)} CD=1n
-Ek  na 0 in 0 {K}
+.subckt ZCPL in out PARAMS: K0=1u K1=0 FHI=20Meg
+.param CD=1n
+Ek  na 0 in 0 {K0}
 Cd  in nx {CD}
 Gd  nx nv nx nv {6.283185307*FHI*CD}
 Vs  nv 0 0
 Rlk nx 0 1e15
-Hd  out na Vs {K*TAUZ/CD}
+Hd  out na Vs {K1/CD}
 .ends ZCPL
 
 *------------------------------------------------------------------------------
@@ -194,11 +239,11 @@ Hd  out na Vs {K*TAUZ/CD}
 + A0=200k GBW=1Meg SR=0.5Meg SRR=0 SRF=0 FP2=0 FP3=0
 + VOS=1m IB=80n IOS=20n
 + RID=2Meg CID=1.4p RIC=400Meg CIC=0.75p
-+ CMRR=31.6k FCMRR=0 PSRRP=31.6k PSRRN=31.6k FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=15 VEEN=-15
++ CMRR=0 PSRR=0 PSRRP=0 PSRRN=0 FCMRR=0 FPSRR=0 FPSRRP=0 FPSRRN=0 VCCN=15 VEEN=-15 KREF=0.5
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
 + ICCQ=1.7m VHD=2 VLD=2 ICMHI=2 ICMLO=2 VK=0.15
-+ ROUT=75 ISRC=25m ISNK=25m VXO=2m COUT=3p
++ ROUT=75 ROUTDC=0 ISRC=25m ISNK=25m VXO=2m COUT=3p
 + VCLMP=100 RCLMP=100 KJUMP=0
 + PRHI=0 PRLO=0 VPRHI=0 VPRLO=0 IPR=0 VCMT=1 VKT=0.1 DVOST=0 DIBT=0
 
@@ -211,6 +256,8 @@ Hd  out na Vs {K*TAUZ/CD}
 .param IDIFV={0.5*(SRRV-SRFV)*C1V}  ; half the difference (asymmetric slew)
 .param GM0={PI2*GBW*C1V}           ; small-signal transconductance -> GBW
 .param R1V={A0/GM0}                ; DC gain A0 = GM0*R1V
+.param FP2V={FP2>0 ? FP2 : 3*GBW}
+.param FP3V={FP3>0 ? FP3 : 10*GBW}
 .param VNTH={sqrt(4*1.380649e-23*300.15*1e3)}   ; thermal noise of 1k at 27C
 * 1/f source: diode biased at IFL. Its flicker voltage density is
 * KF*IFL*(Vt/IFL)^2/f = KF*Vt^2/(IFL*f), so KF = ENOISE^2*FCEN*IFL/Vt^2.
@@ -242,20 +289,30 @@ Hd  out na Vs {K*TAUZ/CD}
 .param KID={1/(RID*IDL)}
 Bid  inp inn I = {IDL}*tanh(V(vd)*{KID})
 Cid  inp inn {CID}
-Gic1 inp 0 inp 0 {1/RIC}
-Gic2 inn 0 inn 0 {1/RIC}
-Cic1 inp 0 {CIC}
-Cic2 inn 0 {CIC}
-* bias currents flow INTO the pins for IB > 0 (NPN input)
-Ibp  inp 0 DC {IB+IOS/2}
-Ibn  inn 0 DC {IB-IOS/2}
+* No element of the model connects to ground: every pin current returns to a
+* supply pin, and internal voltages are referred to nref (between the rails)
+* or are computed from pin-voltage differences. Grounding any node of the
+* circuit then gives the same result (a floating supply works).
+* nref: reference of the gain stages, KREF of the way from vee to vcc
+Bref nref 0 V = V(vee)+{KREF}*(V(vcc)-V(vee))
+* common-mode input resistance (to nref, current returned to vee) and
+* capacitance (half to each rail)
+Gic1 inp vee inp nref {1/RIC}
+Gic2 inn vee inn nref {1/RIC}
+Cic1 inp vcc {0.5*CIC}
+Cic3 inp vee {0.5*CIC}
+Cic2 inn vcc {0.5*CIC}
+Cic4 inn vee {0.5*CIC}
+* bias currents flow INTO the pins for IB > 0 (NPN input), returned to vee
+Ibp  inp vee DC {IB+IOS/2}
+Ibn  inn vee DC {IB-IOS/2}
 * shared nodes, each computed once per iteration (fewer, smaller expressions:
 * every controlling node of a behavioural source costs a derivative tree)
 Bvc  nvc 0 V = 0.5*(V(inp)+V(inn))
 Bsq  nsq 0 V = 0.5*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+1e-4)
 Bcx  ncx 0 V = 0.5*(1+tanh((V(nvc)-V(vcc)+{VCMT})/{VKT}))
-Bibt1 inp 0 I = {DIBT}*V(ncx)
-Bibt2 inn 0 I = {DIBT}*V(ncx)
+Bibt1 inp vee I = {DIBT}*V(ncx)
+Bibt2 inn vee I = {DIBT}*V(ncx)
 * optional differential input clamp diodes: VCLMP = diode drop at 1 mA
 * (set via the emission coefficient), RCLMP = series resistance
 Dp1  inp inn DIN
@@ -269,8 +326,8 @@ Ewn  nwn 0 nnv 0 {GENV}
 * white current noise on each input
 Rnp  nnp 0 1e3
 Rnn  nnn 0 1e3
-Gnp  0 inp nnp 0 {GNI}
-Gnn  0 inn nnn 0 {GNI}
+Gnp  vee inp nnp 0 {GNI}
+Gnn  vee inn nnn 0 {GNI}
 * 1/f voltage noise: flicker noise of a diode biased at IFL, minus an
 * identical KF=0 diode so that the DC drop cancels
 Ifa  0 nfa DC {IFL}
@@ -285,29 +342,302 @@ Ifp1 0 nfp1 DC {IFL}
 Dfp1 nfp1 0 DFLKI
 Ifp2 0 nfp2 DC {IFL}
 Dfp2 nfp2 0 DQ
-Gfp  0 inp nfp1 nfp2 {GFI}
+Gfp  vee inp nfp1 nfp2 {GFI}
 Ifn1 0 nfn1 DC {IFL}
 Dfn1 nfn1 0 DFLKI
 Ifn2 0 nfn2 DC {IFL}
 Dfn2 nfn2 0 DQ
-Gfn  0 inn nfn1 nfn2 {GFI}
+Gfn  vee inn nfn1 nfn2 {GFI}
 .model DFLKI D(IS=1e-14 N=1 KF={KFI} AF=1)
 
 * ---- CMRR and PSRR coupling into the input -----------------------------------
-Bcm  ncm0 0 V = V(nvc)-{VCMN}
-.param FCMV={FCMRR>0 ? FCMRR : 6.32*GBW/CMRR}
-Xcm  ncm0 ncm ZCPL PARAMS: K={1/CMRR} FZ={FCMV}
-Bps1 nps1i 0 V = V(vcc)-{VCCN}
-.param FPSV={FPSRR>0 ? FPSRR : 1e-4*GBW}
-.param FPSPV={FPSRRP>0 ? FPSRRP : FPSV}
-.param FPSNV={FPSRRN>0 ? FPSRRN : FPSV}
-Xps1 nps1i nps1 ZCPL PARAMS: K={1/PSRRP} FZ={FPSPV}
-Bps2 nps2i 0 V = V(vee)-{VEEN}
-Xps2 nps2i nps2 ZCPL PARAMS: K={1/PSRRN} FZ={FPSNV}
+* Explicit coupling of the supply-to-input-CM differences, RJP(s) and RJN(s),
+* from the rules below (see tools/rejection.py and the PARAMETERS section).
+* Together with the coupling through nref (KREF/A(s) for vcc, (1-KREF)/A(s)
+* for vee) it gives the totals T_P, T_N, and T_C = 1/A - T_P - T_N for the
+* input common mode: errors are referred to the pin voltages only.
+* ---- begin rejection rules (generated by tools/rejection.py; do not edit) ----
+.param RJ2PI={6.283185307}
+.param RJG0={1/A0}
+.param RJG1={1/(RJ2PI*GBW)}
+.param RJHP={PSRRP>0 ? 1 : 0}
+.param RJHN={PSRRN>0 ? 1 : 0}
+.param RJHC={CMRR>0 ? 1 : 0}
+.param RJHS={PSRR>0 ? 1 : 0}
+.param RJMP0={1/max(PSRRP,1e-30)}
+.param RJMN0={1/max(PSRRN,1e-30)}
+.param RJMC0={CMRR>0 ? 1/CMRR : 1/31.6k}
+.param RJMS0={PSRR>0 ? 1/PSRR : 1/31.6k}
+.param RJK0={RJHP+RJHN+RJHC+RJHS}
+.param RJLA0={RJK0<2 ? 1 : 0}
+.param RJGC0={max(RJHC,RJLA0)}
+.param RJLB0={RJHP+RJHN+RJGC0+RJHS<2 ? 1 : 0}
+.param RJGS0={max(RJHS,RJLB0)}
+.param RJGP0={RJHP}
+.param RJGN0={RJHN}
+.param RJUP0={RJHP}
+.param RJFP0={1}
+.param RJSP0={1}
+.param RJUN0={RJHN}
+.param RJFN0={1}
+.param RJSN0={1}
+.param RJUC0={RJHC}
+.param RJFC0={1}
+.param RJSC0={1}
+.param RJUS0={RJHS}
+.param RJFS0={1}
+.param RJSS0={1}
+.param RJKN0={RJGP0}
+.param RJKC0={RJGP0+RJGN0}
+.param RJKS0={RJGP0+RJGN0+RJGC0}
+.param RJXP0={RJGP0}
+.param RJXN0={RJGN0*(1-min(RJKN0,1))}
+.param RJXC0={RJGC0*(1-min(RJKC0,1))}
+.param RJXS0={RJGS0*(1-min(RJKS0,1))}
+.param RJYP0={0}
+.param RJYN0={RJGN0*(min(RJKN0,1)-min(max(RJKN0-1,0),1))}
+.param RJYC0={RJGC0*(min(RJKC0,1)-min(max(RJKC0-1,0),1))}
+.param RJYS0={RJGS0*(min(RJKS0,1)-min(max(RJKS0-1,0),1))}
+.param RJAX0={RJXP0+RJXC0+RJXS0}
+.param RJBX0={RJXN0+RJXC0-RJXS0}
+.param RJCX0={RJXC0*RJG0}
+.param RJQX0={1-2*RJXC0}
+.param RJMX0={RJXP0*RJMP0+RJXN0*RJMN0+RJXC0*RJMC0+RJXS0*RJMS0}
+.param RJFX0={RJXP0*RJFP0+RJXN0*RJFN0+RJXC0*RJFC0+RJXS0*RJFS0}
+.param RJSX0={RJXP0*RJSP0+RJXN0*RJSN0+RJXC0*RJSC0+RJXS0*RJSS0}
+.param RJAY0={RJYP0+RJYC0+RJYS0}
+.param RJBY0={RJYN0+RJYC0-RJYS0}
+.param RJCY0={RJYC0*RJG0}
+.param RJQY0={1-2*RJYC0}
+.param RJMY0={RJYP0*RJMP0+RJYN0*RJMN0+RJYC0*RJMC0+RJYS0*RJMS0}
+.param RJFY0={RJYP0*RJFP0+RJYN0*RJFN0+RJYC0*RJFC0+RJYS0*RJFS0}
+.param RJSY0={RJYP0*RJSP0+RJYN0*RJSN0+RJYC0*RJSC0+RJYS0*RJSS0}
+.param RJDET0={RJAX0*RJBY0-RJAY0*RJBX0}
+.param RJEP0={RJUP0*(1-RJXP0-RJYP0)}
+.param RJEN0={RJUN0*(1-RJXN0-RJYN0)}
+.param RJEC0={RJUC0*(1-RJXC0-RJYC0)}
+.param RJES0={RJUS0*(1-RJXS0-RJYS0)}
+.param RJDP0={1-RJXP0-RJYP0}
+.param RJDN0={1-RJXN0-RJYN0}
+.param RJDC0={1-RJXC0-RJYC0}
+.param RJMXY0={RJMX0+RJMY0+1e-30}
+.param RJRX10={RJCX0+RJQX0*(RJFX0*(1)+(1-RJFX0)*RJSX0)*RJMX0}
+.param RJRY10={RJCY0+RJQY0*(RJFY0*(1)+(1-RJFY0)*RJSY0)*RJMY0}
+.param RJTP10={(RJRX10*RJBY0-RJRY10*RJBX0)/RJDET0}
+.param RJTN10={(RJAX0*RJRY10-RJAY0*RJRX10)/RJDET0}
+.param RJTC10={RJG0-RJTP10-RJTN10}
+.param RJTS10={RJTP10-RJTN10}
+.param RJLP10={log(max(abs(RJTP10),1e-30)/max(RJMP0,1e-30))}
+.param RJLN10={log(max(abs(RJTN10),1e-30)/max(RJMN0,1e-30))}
+.param RJLC10={log(max(abs(RJTC10),1e-30)/max(RJMC0,1e-30))}
+.param RJLS10={log(max(abs(RJTS10),1e-30)/max(RJMS0,1e-30))}
+.param RJMM10={RJEP0*RJLP10*RJLP10+RJEN0*RJLN10*RJLN10+RJEC0*RJLC10*RJLC10+RJES0*RJLS10*RJLS10}
+.param RJTI10={RJDP0*abs(RJTP10)+RJDN0*abs(RJTN10)+RJDC0*abs(RJTC10)}
+.param RJCO10={RJMM10+(-1)*1e-6*RJTI10/RJMXY0}
+.param RJRX20={RJCX0+RJQX0*(RJFX0*(1)+(1-RJFX0)*RJSX0)*RJMX0}
+.param RJRY20={RJCY0+RJQY0*(RJFY0*(-1)+(1-RJFY0)*RJSY0)*RJMY0}
+.param RJTP20={(RJRX20*RJBY0-RJRY20*RJBX0)/RJDET0}
+.param RJTN20={(RJAX0*RJRY20-RJAY0*RJRX20)/RJDET0}
+.param RJTC20={RJG0-RJTP20-RJTN20}
+.param RJTS20={RJTP20-RJTN20}
+.param RJLP20={log(max(abs(RJTP20),1e-30)/max(RJMP0,1e-30))}
+.param RJLN20={log(max(abs(RJTN20),1e-30)/max(RJMN0,1e-30))}
+.param RJLC20={log(max(abs(RJTC20),1e-30)/max(RJMC0,1e-30))}
+.param RJLS20={log(max(abs(RJTS20),1e-30)/max(RJMS0,1e-30))}
+.param RJMM20={RJEP0*RJLP20*RJLP20+RJEN0*RJLN20*RJLN20+RJEC0*RJLC20*RJLC20+RJES0*RJLS20*RJLS20}
+.param RJTI20={RJDP0*abs(RJTP20)+RJDN0*abs(RJTN20)+RJDC0*abs(RJTC20)}
+.param RJCO20={RJMM20+(-1)*1e-6*RJTI20/RJMXY0}
+.param RJRX30={RJCX0+RJQX0*(RJFX0*(-1)+(1-RJFX0)*RJSX0)*RJMX0}
+.param RJRY30={RJCY0+RJQY0*(RJFY0*(1)+(1-RJFY0)*RJSY0)*RJMY0}
+.param RJTP30={(RJRX30*RJBY0-RJRY30*RJBX0)/RJDET0}
+.param RJTN30={(RJAX0*RJRY30-RJAY0*RJRX30)/RJDET0}
+.param RJTC30={RJG0-RJTP30-RJTN30}
+.param RJTS30={RJTP30-RJTN30}
+.param RJLP30={log(max(abs(RJTP30),1e-30)/max(RJMP0,1e-30))}
+.param RJLN30={log(max(abs(RJTN30),1e-30)/max(RJMN0,1e-30))}
+.param RJLC30={log(max(abs(RJTC30),1e-30)/max(RJMC0,1e-30))}
+.param RJLS30={log(max(abs(RJTS30),1e-30)/max(RJMS0,1e-30))}
+.param RJMM30={RJEP0*RJLP30*RJLP30+RJEN0*RJLN30*RJLN30+RJEC0*RJLC30*RJLC30+RJES0*RJLS30*RJLS30}
+.param RJTI30={RJDP0*abs(RJTP30)+RJDN0*abs(RJTN30)+RJDC0*abs(RJTC30)}
+.param RJCO30={RJMM30+(-1)*1e-6*RJTI30/RJMXY0}
+.param RJRX40={RJCX0+RJQX0*(RJFX0*(-1)+(1-RJFX0)*RJSX0)*RJMX0}
+.param RJRY40={RJCY0+RJQY0*(RJFY0*(-1)+(1-RJFY0)*RJSY0)*RJMY0}
+.param RJTP40={(RJRX40*RJBY0-RJRY40*RJBX0)/RJDET0}
+.param RJTN40={(RJAX0*RJRY40-RJAY0*RJRX40)/RJDET0}
+.param RJTC40={RJG0-RJTP40-RJTN40}
+.param RJTS40={RJTP40-RJTN40}
+.param RJLP40={log(max(abs(RJTP40),1e-30)/max(RJMP0,1e-30))}
+.param RJLN40={log(max(abs(RJTN40),1e-30)/max(RJMN0,1e-30))}
+.param RJLC40={log(max(abs(RJTC40),1e-30)/max(RJMC0,1e-30))}
+.param RJLS40={log(max(abs(RJTS40),1e-30)/max(RJMS0,1e-30))}
+.param RJMM40={RJEP0*RJLP40*RJLP40+RJEN0*RJLN40*RJLN40+RJEC0*RJLC40*RJLC40+RJES0*RJLS40*RJLS40}
+.param RJTI40={RJDP0*abs(RJTP40)+RJDN0*abs(RJTN40)+RJDC0*abs(RJTC40)}
+.param RJCO40={RJMM40+(-1)*1e-6*RJTI40/RJMXY0}
+.param RJSGX0={min(RJCO10,RJCO20)<=min(RJCO30,RJCO40) ? 1 : -1}
+.param RJSA0={RJCO10<=RJCO20 ? 1 : -1}
+.param RJSB0={RJCO30<=RJCO40 ? 1 : -1}
+.param RJSGY0={0.5*(1+RJSGX0)*RJSA0+0.5*(1-RJSGX0)*RJSB0}
+.param RJRX0={RJCX0+RJQX0*(RJFX0*(RJSGX0)+(1-RJFX0)*RJSX0)*RJMX0}
+.param RJRY0={RJCY0+RJQY0*(RJFY0*(RJSGY0)+(1-RJFY0)*RJSY0)*RJMY0}
+.param RJTP0={(RJRX0*RJBY0-RJRY0*RJBX0)/RJDET0}
+.param RJTN0={(RJAX0*RJRY0-RJAY0*RJRX0)/RJDET0}
+.param RJTC0={RJG0-RJTP0-RJTN0}
+.param RJTS0={RJTP0-RJTN0}
+.param TP0={RJTP0}
+.param TN0={RJTN0}
+.param TC0={RJTC0}
+.param TS0={RJTS0}
+.param RJFPV={FPSRRP>0 ? FPSRRP : FPSRR}
+.param RJFNV={FPSRRN>0 ? FPSRRN : FPSRR}
+.param RJOP={RJFPV>0 ? 1 : 0}
+.param RJON={RJFNV>0 ? 1 : 0}
+.param RJOC={FCMRR>0 ? 1 : 0}
+.param RJOS={FPSRR>0 ? 1 : 0}
+.param RJJP={RJHP*RJOP}
+.param RJJN={RJHN*RJON}
+.param RJJC={RJHC*RJOC}
+.param RJJS={RJHS*RJOS}
+.param RJMP1={RJJP>0 ? RJMP0/(RJ2PI*max(RJFPV,1e-30)) : KREF*RJG1}
+.param RJMN1={RJJN>0 ? RJMN0/(RJ2PI*max(RJFNV,1e-30)) : (1-KREF)*RJG1}
+.param RJMC1={RJJC>0 ? RJMC0/(RJ2PI*max(FCMRR,1e-30)) : 0}
+.param RJMS1={RJJS>0 ? RJMS0/(RJ2PI*max(FPSRR,1e-30)) : 0}
+.param RJK1={RJJP+RJJN+RJJC+RJJS}
+.param RJLA1={RJK1<2 ? 1-RJJP : 0}
+.param RJGP1={max(RJJP,RJLA1)}
+.param RJLB1={RJK1+RJLA1<2 ? 1-RJJN : 0}
+.param RJGN1={max(RJJN,RJLB1)}
+.param RJGC1={RJJC}
+.param RJGS1={RJJS}
+.param RJUP1={RJJP}
+.param RJUN1={RJJN}
+.param RJUC1={RJJC}
+.param RJUS1={RJJS}
+.param RJFP1={RJJP}
+.param RJFN1={RJJN}
+.param RJFC1={1}
+.param RJFS1={1}
+.param RJSP1={1}
+.param RJSN1={1}
+.param RJSC1={1}
+.param RJSS1={1}
+.param RJKN1={RJGP1}
+.param RJKC1={RJGP1+RJGN1}
+.param RJKS1={RJGP1+RJGN1+RJGC1}
+.param RJXP1={RJGP1}
+.param RJXN1={RJGN1*(1-min(RJKN1,1))}
+.param RJXC1={RJGC1*(1-min(RJKC1,1))}
+.param RJXS1={RJGS1*(1-min(RJKS1,1))}
+.param RJYP1={0}
+.param RJYN1={RJGN1*(min(RJKN1,1)-min(max(RJKN1-1,0),1))}
+.param RJYC1={RJGC1*(min(RJKC1,1)-min(max(RJKC1-1,0),1))}
+.param RJYS1={RJGS1*(min(RJKS1,1)-min(max(RJKS1-1,0),1))}
+.param RJAX1={RJXP1+RJXC1+RJXS1}
+.param RJBX1={RJXN1+RJXC1-RJXS1}
+.param RJCX1={RJXC1*RJG1}
+.param RJQX1={1-2*RJXC1}
+.param RJMX1={RJXP1*RJMP1+RJXN1*RJMN1+RJXC1*RJMC1+RJXS1*RJMS1}
+.param RJFX1={RJXP1*RJFP1+RJXN1*RJFN1+RJXC1*RJFC1+RJXS1*RJFS1}
+.param RJSX1={RJXP1*RJSP1+RJXN1*RJSN1+RJXC1*RJSC1+RJXS1*RJSS1}
+.param RJAY1={RJYP1+RJYC1+RJYS1}
+.param RJBY1={RJYN1+RJYC1-RJYS1}
+.param RJCY1={RJYC1*RJG1}
+.param RJQY1={1-2*RJYC1}
+.param RJMY1={RJYP1*RJMP1+RJYN1*RJMN1+RJYC1*RJMC1+RJYS1*RJMS1}
+.param RJFY1={RJYP1*RJFP1+RJYN1*RJFN1+RJYC1*RJFC1+RJYS1*RJFS1}
+.param RJSY1={RJYP1*RJSP1+RJYN1*RJSN1+RJYC1*RJSC1+RJYS1*RJSS1}
+.param RJDET1={RJAX1*RJBY1-RJAY1*RJBX1}
+.param RJEP1={RJUP1*(1-RJXP1-RJYP1)}
+.param RJEN1={RJUN1*(1-RJXN1-RJYN1)}
+.param RJEC1={RJUC1*(1-RJXC1-RJYC1)}
+.param RJES1={RJUS1*(1-RJXS1-RJYS1)}
+.param RJDP1={1-RJXP1-RJYP1}
+.param RJDN1={1-RJXN1-RJYN1}
+.param RJDC1={1-RJXC1-RJYC1}
+.param RJMXY1={RJMX1+RJMY1+1e-30}
+.param RJRX11={RJCX1+RJQX1*(RJFX1*(1)+(1-RJFX1)*RJSX1)*RJMX1}
+.param RJRY11={RJCY1+RJQY1*(RJFY1*(1)+(1-RJFY1)*RJSY1)*RJMY1}
+.param RJTP11={(RJRX11*RJBY1-RJRY11*RJBX1)/RJDET1}
+.param RJTN11={(RJAX1*RJRY11-RJAY1*RJRX11)/RJDET1}
+.param RJTC11={RJG1-RJTP11-RJTN11}
+.param RJTS11={RJTP11-RJTN11}
+.param RJLP11={log(max(abs(RJTP11),1e-30)/max(RJMP1,1e-30))}
+.param RJLN11={log(max(abs(RJTN11),1e-30)/max(RJMN1,1e-30))}
+.param RJLC11={log(max(abs(RJTC11),1e-30)/max(RJMC1,1e-30))}
+.param RJLS11={log(max(abs(RJTS11),1e-30)/max(RJMS1,1e-30))}
+.param RJMM11={RJEP1*RJLP11*RJLP11+RJEN1*RJLN11*RJLN11+RJEC1*RJLC11*RJLC11+RJES1*RJLS11*RJLS11}
+.param RJTI11={RJDP1*abs(RJTP11)+RJDN1*abs(RJTN11)+RJDC1*abs(RJTC11)}
+.param RJCO11={RJMM11+(1)*1e-6*RJTI11/RJMXY1}
+.param RJRX21={RJCX1+RJQX1*(RJFX1*(1)+(1-RJFX1)*RJSX1)*RJMX1}
+.param RJRY21={RJCY1+RJQY1*(RJFY1*(-1)+(1-RJFY1)*RJSY1)*RJMY1}
+.param RJTP21={(RJRX21*RJBY1-RJRY21*RJBX1)/RJDET1}
+.param RJTN21={(RJAX1*RJRY21-RJAY1*RJRX21)/RJDET1}
+.param RJTC21={RJG1-RJTP21-RJTN21}
+.param RJTS21={RJTP21-RJTN21}
+.param RJLP21={log(max(abs(RJTP21),1e-30)/max(RJMP1,1e-30))}
+.param RJLN21={log(max(abs(RJTN21),1e-30)/max(RJMN1,1e-30))}
+.param RJLC21={log(max(abs(RJTC21),1e-30)/max(RJMC1,1e-30))}
+.param RJLS21={log(max(abs(RJTS21),1e-30)/max(RJMS1,1e-30))}
+.param RJMM21={RJEP1*RJLP21*RJLP21+RJEN1*RJLN21*RJLN21+RJEC1*RJLC21*RJLC21+RJES1*RJLS21*RJLS21}
+.param RJTI21={RJDP1*abs(RJTP21)+RJDN1*abs(RJTN21)+RJDC1*abs(RJTC21)}
+.param RJCO21={RJMM21+(1)*1e-6*RJTI21/RJMXY1}
+.param RJRX31={RJCX1+RJQX1*(RJFX1*(-1)+(1-RJFX1)*RJSX1)*RJMX1}
+.param RJRY31={RJCY1+RJQY1*(RJFY1*(1)+(1-RJFY1)*RJSY1)*RJMY1}
+.param RJTP31={(RJRX31*RJBY1-RJRY31*RJBX1)/RJDET1}
+.param RJTN31={(RJAX1*RJRY31-RJAY1*RJRX31)/RJDET1}
+.param RJTC31={RJG1-RJTP31-RJTN31}
+.param RJTS31={RJTP31-RJTN31}
+.param RJLP31={log(max(abs(RJTP31),1e-30)/max(RJMP1,1e-30))}
+.param RJLN31={log(max(abs(RJTN31),1e-30)/max(RJMN1,1e-30))}
+.param RJLC31={log(max(abs(RJTC31),1e-30)/max(RJMC1,1e-30))}
+.param RJLS31={log(max(abs(RJTS31),1e-30)/max(RJMS1,1e-30))}
+.param RJMM31={RJEP1*RJLP31*RJLP31+RJEN1*RJLN31*RJLN31+RJEC1*RJLC31*RJLC31+RJES1*RJLS31*RJLS31}
+.param RJTI31={RJDP1*abs(RJTP31)+RJDN1*abs(RJTN31)+RJDC1*abs(RJTC31)}
+.param RJCO31={RJMM31+(1)*1e-6*RJTI31/RJMXY1}
+.param RJRX41={RJCX1+RJQX1*(RJFX1*(-1)+(1-RJFX1)*RJSX1)*RJMX1}
+.param RJRY41={RJCY1+RJQY1*(RJFY1*(-1)+(1-RJFY1)*RJSY1)*RJMY1}
+.param RJTP41={(RJRX41*RJBY1-RJRY41*RJBX1)/RJDET1}
+.param RJTN41={(RJAX1*RJRY41-RJAY1*RJRX41)/RJDET1}
+.param RJTC41={RJG1-RJTP41-RJTN41}
+.param RJTS41={RJTP41-RJTN41}
+.param RJLP41={log(max(abs(RJTP41),1e-30)/max(RJMP1,1e-30))}
+.param RJLN41={log(max(abs(RJTN41),1e-30)/max(RJMN1,1e-30))}
+.param RJLC41={log(max(abs(RJTC41),1e-30)/max(RJMC1,1e-30))}
+.param RJLS41={log(max(abs(RJTS41),1e-30)/max(RJMS1,1e-30))}
+.param RJMM41={RJEP1*RJLP41*RJLP41+RJEN1*RJLN41*RJLN41+RJEC1*RJLC41*RJLC41+RJES1*RJLS41*RJLS41}
+.param RJTI41={RJDP1*abs(RJTP41)+RJDN1*abs(RJTN41)+RJDC1*abs(RJTC41)}
+.param RJCO41={RJMM41+(1)*1e-6*RJTI41/RJMXY1}
+.param RJSGX1={min(RJCO11,RJCO21)<=min(RJCO31,RJCO41) ? 1 : -1}
+.param RJSA1={RJCO11<=RJCO21 ? 1 : -1}
+.param RJSB1={RJCO31<=RJCO41 ? 1 : -1}
+.param RJSGY1={0.5*(1+RJSGX1)*RJSA1+0.5*(1-RJSGX1)*RJSB1}
+.param RJRX1={RJCX1+RJQX1*(RJFX1*(RJSGX1)+(1-RJFX1)*RJSX1)*RJMX1}
+.param RJRY1={RJCY1+RJQY1*(RJFY1*(RJSGY1)+(1-RJFY1)*RJSY1)*RJMY1}
+.param RJTP1={(RJRX1*RJBY1-RJRY1*RJBX1)/RJDET1}
+.param RJTN1={(RJAX1*RJRY1-RJAY1*RJRX1)/RJDET1}
+.param RJTC1={RJG1-RJTP1-RJTN1}
+.param RJTS1={RJTP1-RJTN1}
+.param TP1={RJTP1}
+.param TN1={RJTN1}
+.param TC1={RJTC1}
+.param TS1={RJTS1}
+.param RJP0={TP0-KREF*RJG0}
+.param RJP1={TP1-KREF*RJG1}
+.param RJN0={TN0-(1-KREF)*RJG0}
+.param RJN1={TN1-(1-KREF)*RJG1}
+* ---- end rejection rules ----
+.param FHIV={max(20Meg,3*FP3V)}
+* (a brace expression with a minus sign after V(...) - V(...) is misread by
+* ngspice 42 inside a B source: the nominal differences are separate params)
+.param DVPN={VCCN-VCMN}
+.param DVNN={VEEN-VCMN}
+Brp  nrp0 0 V = V(vcc)-V(nvc)-{DVPN}
+Xrp  nrp0 nrp ZCPL PARAMS: K0={RJP0} K1={RJP1} FHI={FHIV}
+Brn  nrn0 0 V = V(vee)-V(nvc)-{DVNN}
+Xrn  nrn0 nrn ZCPL PARAMS: K0={RJN0} K1={RJN1} FHI={FHIV}
 
 * ---- effective differential input voltage ------------------------------------
 * = V(inp) - V(inn) + series error voltage (VOS + CMRR/PSRR terms + noise)
-Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(ncm)+V(nps1)+V(nps2)+V(nwn)+V(nfl)+{DVOST}*V(ncx)
+Bvd  vd 0 V = V(inp)-V(inn)+{VOS}+V(nrp)+V(nrn)+V(nwn)+V(nfl)+{DVOST}*V(ncx)
 
 * ---- input common-mode range window (0..1, 0.5 at the ICMR edge) ---------------
 * (times 1 - J for each conducting reversal junction, see below)
@@ -348,8 +678,11 @@ Bwin nwin 0 V = max(0.25*(1+tanh((V(nvc)+V(nsq)-V(vee)-{ICMLO})/{VK}))*(1+tanh((
 * a source resistance RS prevents the reversal while 0.9*RS*IPR exceeds the
 * overdrive. IPR is about the tail current of the input pair (0 = SR*30pF).
 * pin current: the junction logistic shifted by DJ = VT*ln(9), i.e. 9J/(1+8J)
-Bprp inp 0 I = {IPRV}*(9*V(njhp)/(1+8*V(njhp))-9*V(njlp)/(1+8*V(njlp)))
-Bprn inn 0 I = {IPRV}*(9*V(njhn)/(1+8*V(njhn))-9*V(njln)/(1+8*V(njln)))
+* (top junction: from the pin to vcc; bottom junction: from vee out of the pin)
+Bprp inp vcc I = {IPRV}*9*V(njhp)/(1+8*V(njhp))
+Bprn inn vcc I = {IPRV}*9*V(njhn)/(1+8*V(njhn))
+Bplp vee inp I = {IPRV}*9*V(njlp)/(1+8*V(njlp))
+Bpln vee inn I = {IPRV}*9*V(njln)/(1+8*V(njln))
 * Injected current: IMAX*PR*J^(1+L), L = max(log2(PR),0). For PR >= 1 it
 * equals the collapsing stage current IMAX*(1-J) at J = 1/2 whatever PR is, so
 * the output flips at J = 1/2; at full conduction it is PR*IMAX.
@@ -357,7 +690,7 @@ Bprn inn 0 I = {IPRV}*(9*V(njhn)/(1+8*V(njhn))-9*V(njln)/(1+8*V(njln)))
 .param LPL={max(log(max(PRLO,1e-3))/log(2),0)}
 .param AH={IMAXV*PRHI}
 .param AL={IMAXV*PRLO}
-Bpr  0 n1 I = {AH}*(pwr(V(njhn),{1+LPH})-pwr(V(njhp),{1+LPH}))+{AL}*(pwr(V(njlp),{1+LPL})-pwr(V(njln),{1+LPL}))
+Bpr  nref n1 I = {AH}*(pwr(V(njhn),{1+LPH})-pwr(V(njhp),{1+LPH}))+{AL}*(pwr(V(njlp),{1+LPL})-pwr(V(njln),{1+LPL}))
 
 * ---- input-pair tail capacitance (KJUMP) ----------------------------------------
 * The tail (common) node of the input pair follows the higher (KJUMP > 0,
@@ -378,13 +711,11 @@ Btl  ntl0 0 V = V(nvc)+{0.5*TPL}*sqrt((V(inp)-V(inn))*(V(inp)-V(inn))+2.5e-3)
 * sensed current is then a smooth state, not the step-to-step ringing that
 * trapezoidal integration gives in a capacitor driven by an ideal source
 * (the max() below would rectify that ringing).
-.param FP2V={FP2>0 ? FP2 : 3*GBW}
-.param FP3V={FP3>0 ? FP3 : 10*GBW}
 .param RTL={1/(PI2*FP3V*KTC*C1V)}
 Vtl  ntl0 ntl 0
 Gtl  ntl ntlc ntl ntlc {1/RTL}
-Ctl  ntlc 0 {KTC*C1V}
-Rtllk ntlc 0 1e15
+Ctl  ntlc nref {KTC*C1V}
+Rtllk ntlc nref 1e15
 
 * ---- input stage + dominant pole (tanh gives slew limiting) ------------------
 * The current limit IL = IMAXV + IDIFV*tanh(4*GM0*vd/IMAXV) moves smoothly from
@@ -392,34 +723,38 @@ Rtllk ntlc 0 1e15
 * output slews at SRR up and SRF down. The small-signal gm stays GM0 at vd = 0
 * (IL cancels to first order); with SRR = SRF the stage is the plain tanh.
 Bim  nim 0 V = {IMAXV}+{IDIFV}*tanh({4*GM0/IMAXV}*V(vd))
-Bgm  0 n1 I = tanh({GM0}*V(vd)/V(nim))*(V(nim)*V(nwin)+max({TPL}*I(Vtl),0))
-G1   n1 0 n1 0 {1/R1V}
-C1   n1 0 {C1V}
-R1lk n1 0 1e15
+Bgm  nref n1 I = tanh({GM0}*V(vd)/V(nim))*(V(nim)*V(nwin)+max({TPL}*I(Vtl),0))
+G1   n1 nref n1 nref {1/R1V}
+C1   n1 nref {C1V}
+R1lk n1 nref 1e15
 * soft clamp of the gain node to the swing limits (fast overdrive recovery)
 Bhi  nhi 0 V = V(vcc)-{VHD}
 Blo  nlo 0 V = V(vee)+{VLD}
-Bclp n1 0 I = {IMAXV/1e-3}*(max(V(n1)-V(nhi),0)+min(V(n1)-V(nlo),0))
+Bclp n1 nref I = {IMAXV/1e-3}*(max(V(n1)-V(nhi),0)+min(V(n1)-V(nlo),0))
 
 * ---- higher-order poles (noiseless 1k / C sections) --------------------------
-G2   0 n2 n1 0 1m
-G2r  n2 0 n2 0 1m
-C2   n2 0 {1/(PI2*FP2V*1e3)}
-R2lk n2 0 1e15
-G3   0 n3 n2 0 1m
-G3r  n3 0 n3 0 1m
-C3   n3 0 {1/(PI2*FP3V*1e3)}
-R3lk n3 0 1e15
+G2   nref n2 n1 nref 1m
+G2r  n2 nref n2 nref 1m
+C2   n2 nref {1/(PI2*FP2V*1e3)}
+R2lk n2 nref 1e15
+G3   nref n3 n2 nref 1m
+G3r  n3 nref n3 nref 1m
+C3   n3 nref {1/(PI2*FP3V*1e3)}
+R3lk n3 nref 1e15
 
 * ---- output stage ----------------------------------------------------------------
 * Norton output: I = (V(n3)-V(out) with crossover dead-zone)/ROUT, hard-limited
 Bicmd nicmd 0 V = min({ISRC},max(-{ISNK},((V(n3)-V(out))-0.5*{VXO}*tanh((V(n3)-V(out))/({VXO}+1e-9)))/{ROUT}))
 * smooth split into source (from VCC) and sink (to VEE) currents:
 * Bsrc - Bsnk = Icmd exactly, and the slope is well-defined at I = 0
+* DC output resistance ROUTDC: the output current loads the gain node, which
+* drops by Iout*ROUTDC at DC; C1 shunts it above the dominant pole
+Bodc n1 nref I = {ROUTDC/R1V}*V(nicmd)
 Bsrc vcc out I = 0.5*(V(nicmd)+sqrt(V(nicmd)*V(nicmd)+1e-12))
 Bsnk out vee I = 0.5*(sqrt(V(nicmd)*V(nicmd)+1e-12)-V(nicmd))
 Iq   vcc vee DC {ICCQ}
-Cout out 0 {COUT}
+Cout out vcc {0.5*COUT}
+Cout2 out vee {0.5*COUT}
 .ends OPAMP_FULL
 
 *==============================================================================
@@ -427,7 +762,7 @@ Cout out 0 {COUT}
 *
 * Generic CMOS rail-to-rail, 5 V single supply, 5 MHz, 5 V/us:
 *   A0=100k GBW=5Meg SR=5Meg FP2=15Meg FP3=50Meg VOS=2m IB=1p IOS=0.5p
-*   RID=1T CID=2p RIC=2T CIC=1.5p CMRR=10k FCMRR=5k PSRRP=10k PSRRN=10k
+*   RID=1T CID=2p RIC=2T CIC=1.5p CMRR=10k FCMRR=5k PSRR=10k
 *   FPSRR=1k VCCN=5 VEEN=0 ENOISE=15n FCEN=1k INOISE=0.1f ICCQ=1m
 *   VHD=0.05 VLD=0.05 ICMHI=-0.1 ICMLO=-0.1 VK=0.05 ROUT=100 ISRC=40m
 *   ISNK=40m VXO=0 COUT=2p

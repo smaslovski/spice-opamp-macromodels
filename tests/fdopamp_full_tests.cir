@@ -81,17 +81,17 @@ Rf8b on8 np8 200k
 Vin8 sp8 0 DC 0 AC 1
 Vvo8 vo8 0 DC 0
 
-* --- 9. Separate PSRR corners: FPSRRP = 10k, FPSRRN = 1Meg (FPSRR = 100k) ---------
-*        expected at 1 MHz: PSRR+ = 80 - 10*log10(1+1e4) = 40.0 dB,
+* --- 9. Separate PSRR corners: PSRRP = PSRRN = 80 dB, FPSRRP = 10k, FPSRRN = 1Meg
+*        (both used exactly, CMRR derived). expected at 1 MHz: PSRR+ = 80 - 10*log10(1+1e4) = 40.0 dB,
 *        PSRR- = 80 - 10*log10(2) = 76.99 dB
 Vcc9 vcc9 0 5 AC 1
-X9   np9 nn9 vcc9 vee op9 on9 vo9 FDOPAMP_FULL PARAMS: FPSRRP=10k FPSRRN=1Meg
+X9   np9 nn9 vcc9 vee op9 on9 vo9 FDOPAMP_FULL PARAMS: PSRRP=10k PSRRN=10k FPSRRP=10k FPSRRN=1Meg
 Lf9a op9 nn9 1e9
 Lf9b on9 np9 1e9
 Cg9a np9 0 1e9
 Cg9b nn9 0 1e9
 Vee10 vee10 0 -5 AC 1
-X10  np10 nn10 vcc vee10 op10 on10 vo10 FDOPAMP_FULL PARAMS: FPSRRP=10k FPSRRN=1Meg
+X10  np10 nn10 vcc vee10 op10 on10 vo10 FDOPAMP_FULL PARAMS: PSRRP=10k PSRRN=10k FPSRRP=10k FPSRRN=1Meg
 Lf10a op10 nn10 1e9
 Lf10b on10 np10 1e9
 Cg10a np10 0 1e9
@@ -115,6 +115,19 @@ Rf12a op12 nn12 2k
 Rf12b on12 np12 2k
 Rl12  op12 on12 1k
 
+* --- 11. No ground node: floating gain-2 stage, inputs and vocm on the supply common,
+*         AC and DC on the common. expected: outputs relative to the common unchanged
+*         when the circuit is lifted by 100 V, no AC output (< -200 dB), no current in Vfl13
+Vfl13 c13 0 DC 0 AC 1
+Vsp13 vcc13 c13 5
+Vsn13 c13 vee13 5
+Rg13a c13 np13 1k
+Rg13b c13 nn13 1k
+Rf13a on13 np13 2k
+Rf13b op13 nn13 2k
+X13   np13 nn13 vcc13 vee13 op13 on13 c13 FDOPAMP_FULL
+Rl13  op13 on13 1k
+
 .control
   set noaskquit
   op
@@ -127,6 +140,8 @@ Rl12  op12 on12 1k
   * test 10: output balance (expected KBAL = 1m)
   let kbal10 = (0.5*(v(op11)+v(on11))-0.5*(v(op12)+v(on12)))/((v(op11)-v(on11))-(v(op12)-v(on12)))
   print kbal10
+  * test 11: floating stage (expected 0 A)
+  print i(Vfl13)
 
   ac dec 20 1 10G
   let ad    = vdb(op1,on1)
@@ -143,6 +158,7 @@ Rl12  op12 on12 1k
   meas ac ph_fu    find phd when ad=0
   meas ac cmrr_lf  find cmrrdb at=1k
   meas ac cmrr_1m  find cmrrdb at=1Meg
+  * defaults (tools/rejection.py --fda): CMRR 90.0 dB, PSRR+ 89.3 dB at low frequency
   meas ac psrr_lf  find psrrp at=1k
   * test 9: separate PSRR corners (theory: 40.0 and 76.99 dB at 1 MHz)
   let psrrp9 = vdb(op1,on1)-vdb(op9,on9)
@@ -204,5 +220,12 @@ Rl12  op12 on12 1k
   print frequency[40] onoise_spectrum[40] nexp8[40] ratio8[40]
   print frequency[80] onoise_spectrum[80] nexp8[80] ratio8[80]
   print r8min r8max
+  * test 11: floating stage, AC on the common and a 100 V lift (expected < -200 dB, 0 V)
+  ac dec 10 1 1G
+  let fl11 = db(abs(v(op13)-v(c13))+abs(v(on13)-v(c13))+1e-30)
+  meas ac float11_max max fl11
+  dc Vfl13 0 100 100
+  let lift11 = (v(op13)[1]-v(c13)[1])-(v(op13)[0]-v(c13)[0])+(v(on13)[1]-v(c13)[1])-(v(on13)[0]-v(c13)[0])
+  print lift11
 .endc
 .end

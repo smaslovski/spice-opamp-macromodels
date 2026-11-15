@@ -34,13 +34,13 @@ os.makedirs(OUT, exist_ok=True)
 CASES = {
     'A': dict(lib='opa_npn.lib', sub='OPA_NPN', vs=15, rl='10k', lo=13.5, hi=15.6, step=15.3,
               mm='A0=5.4k GBW=1.78Meg FP2=4.8Meg FP3=16Meg SRR=0.54Meg SRF=0.66Meg VHD=0.67 VLD=0.72 ICMHI=0.1 ICMLO=1.5 '
-                 'IB=49n IOS=0 RID=1.05Meg FCMRR=1G FPSRR=1G PRHI=3.5 VPRHI=0.03 IPR=20u'),
+                 'IB=49n IOS=0 RID=1.05Meg PRHI=3.5 VPRHI=0.03 IPR=20u'),
     'B': dict(lib='opa_pjfet.lib', sub='OPA_PJFET', vs=15, rl='10k', lo=-15.6, hi=-13.5, step=-15.3,
               mm='A0=8.7k GBW=4.83Meg FP2=35Meg FP3=118Meg SRR=11.9Meg SRF=11.9Meg VHD=0.71 VLD=0.72 ICMHI=1 ICMLO=2.8 VK=0.5 '
-                 'IB=15p IOS=0 RID=1T RIC=1T FCMRR=1G FPSRR=1G PRLO=1.6 VPRLO=0.15 IPR=200u'),
+                 'IB=15p IOS=0 RID=1T RIC=1T PRLO=1.6 VPRLO=0.15 IPR=200u'),
     'C': dict(lib='opa_pmos.lib', sub='OPA_PMOS', vs=2.5, rl='100k',
               mm='VCCN=2.5 VEEN=-2.5 A0=31k GBW=9.9Meg FP2=57Meg FP3=189Meg SRR=6.45Meg SRF=6.82Meg VHD=0.04 VLD=0.01 VXO=0 '
-                 'ICMHI=0.734 ICMLO=-0.1 VK=0.01 IB=0 IOS=0 RID=1T RIC=1T FCMRR=1G FPSRR=1G'),
+                 'ICMHI=0.734 ICMLO=-0.1 VK=0.01 IB=0 IOS=0 RID=1T RIC=1T'),
 }
 RS_DC = (0, 10e3, 100e3)
 RS_TR = (0, 10e3)

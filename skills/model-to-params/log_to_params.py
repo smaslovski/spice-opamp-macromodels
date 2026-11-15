@@ -186,6 +186,9 @@ def parse_pspice(txt):
         g = p['gbwn']
         for k, fx in (('zo_a', g / 100), ('zo_b', g / 10), ('zo_c', g)):
             r[k] = interp_y(f, c['vm(o5)'], fx, logx=True)
+        r['zo_dc'] = c['vm(o5)'][0]
+        if 'vdb(o8)' in c:
+            r['a0u_db'] = c['vdb(o8)'][0]
         r['zd_re0'], r['zc_re0'] = c['vr(p6)'][0], c['vr(p7)'][0]
         r['zd_im0'], r['zc_im0'] = c['vi(p6)'][0], c['vi(p7)'][0]
         r['zd_re'] = interp_y(f, c['vr(p6)'], g / 10, logx=True)
@@ -210,6 +213,7 @@ def parse_pspice(txt):
         r['t50ri'] = interp_x(t, oi, vcm, 1, 2 * ts)
         r['t85ri'] = interp_x(t, oi, vcm + 0.35 * p['vstep'], 1, 2 * ts)
         r['vo2_lo'], r['vo2_hi'] = window(t, o2, a, b, avg), window(t, o2, 2.5 * ts, 2.9 * ts, avg)
+        r['vj_r'], r['vj_f'] = interp_y(t, o2, 1.011 * ts), interp_y(t, o2, 3.012 * ts)
         r['ss_lo'], r['ss_hi'] = window(t, o3, a, b, avg), window(t, o3, 2.5 * ts, 2.9 * ts, avg)
         r['ss_max'], r['ss_min'] = window(t, o3, ts, 3 * ts, max), window(t, o3, 3 * ts, 5 * ts, min)
         for k, col in (('rl', 'v(o4)'), ('nl', 'v(o5)')):
@@ -328,8 +332,28 @@ def derive(ac, fast, slow, vxo=2e-3):
         notes.append('ROUT: the open-loop output impedance varies by more than 2x between GBWN/100 and GBWN; the value at GBWN/10 is used.')
     reff = (2 if vxo > 0 else 1) * rout             # small-signal ROUT at idle (VXO > 0 doubles it)
     kl = (rl + reff) / rl
-    a0 = 10 ** (ac['a0_db'] / 20) * kl
-    put('A0', a0, f"gain at 1 mHz {ac['a0_db']:.2f} dB, times (RL+{'2*' if vxo > 0 else ''}ROUT)/RL")
+    # DC output resistance and unloaded gain: from the gain with and without the
+    # load (both at idle, where the model's small-signal ROUT is REFF), so that
+    # A0*RL/(RL+REFF+ROUTDC) is the loaded gain. Below 10 % of ROUT it is not set.
+    zdc = ac.get('zo_dc')
+    if ac.get('a0u_db') is not None:
+        ratio = 10 ** ((ac['a0u_db'] - ac['a0_db']) / 20)
+        rodc = rl * (ratio - 1) - reff
+        rodc = rodc if rodc > 0.1 * rout else 0.0
+        how = (f"gain at 1 mHz {ac['a0u_db']:.2f} dB without load, {ac['a0_db']:.2f} dB into RL: "
+               f"RL*(ratio-1) - {'2*' if vxo > 0 else ''}ROUT")
+    else:      # older log: |Zout| at 1 mHz (at the DC load ILOAD) beyond ROUT
+        rodc = zdc - rout if zdc is not None and zdc > 1.1 * rout else 0.0
+        how = f"|Zout| at 1 mHz = {sig(zdc) if zdc is not None else '-'} ohm, minus ROUT"
+    if rodc > 0:
+        put('ROUTDC', rodc, how)
+        if zdc is not None and abs((zdc - rout) - rodc) > 0.3 * rodc:
+            notes.append(f'ROUTDC: |Zout| at 1 mHz with the DC load ILOAD gives {sig(zdc - rout)} ohm, the gains at idle '
+                         f'{sig(rodc)} ohm: the output resistance depends on the load current; the idle value is used.')
+    kdc = (rl + reff + rodc) / rl
+    a0 = 10 ** (ac['a0_db'] / 20) * kdc
+    put('A0', a0, f"gain at 1 mHz {ac['a0_db']:.2f} dB, times (RL+{'2*' if vxo > 0 else ''}ROUT"
+                  f"{'+ROUTDC' if rodc > 0 else ''})/RL (unloaded gain)")
     gbw40 = 100 * ac['f40'] * kl
     pm = 180 + ac['ph_fu']
     while pm > 180:
@@ -422,12 +446,15 @@ def derive(ac, fast, slow, vxo=2e-3):
         put('SR', 0.5 * (srr + srf), 'mean of SRR and SRF')
         put('SRR', srr, f'inverter, step {vstep:g} V, rising output, 50 -> 85 %')
         put('SRF', srf, 'falling output, 50 -> 85 %')
-    # follower jump: the follower's slewing line extrapolated back to the input
-    # edge (not with an input clamp: its current drags the output)
+    # follower jump: the follower's output TS/100 after each input edge, less what
+    # slewing at the follower's own rate gives in that time (not with an input
+    # clamp: its current drags the output). A slew rate that falls along the edge
+    # leaves only a few per cent here, where extrapolating the slewing line back
+    # to the edge would show a false jump.
     sfr = 0.35 * vstep / (fast['t85r'] - fast['t50r'])
     sff = 0.35 * vstep / (fast['t85f'] - fast['t50f'])
-    jr = 0.5 - sfr * (fast['t50r'] - ts * 1.0005) / vstep
-    jf = 0.5 - sff * (fast['t50f'] - ts * 3.0015) / vstep
+    jr = (fast['vj_r'] - fast['vo2_lo'] - sfr * 0.0105 * ts) / vstep
+    jf = (fast['vo2_hi'] - fast['vj_f'] - sff * 0.0105 * ts) / vstep
     clamp = fast['icl1'] > 1e-6 + 10 * abs(fast['ibp'] + fast['ibn'])
     if max(jr, jf) >= 0.05 and not clamp:
         k = jr if jr >= jf else -jf
@@ -500,13 +527,18 @@ def derive(ac, fast, slow, vxo=2e-3):
     # transconductance of its own; both are removed before the window is solved.
     gm_k = srv / (2 * math.pi * gbw)        # IMAX/GM0
     vks, anchors, beyond = [], {}, {}
+    vref = 0.5 * (vcc + vee)
+    # the model's gain in these followers (into RL, outside the crossover)
+    afl = a0 * rl / (rl + rout + P.get('ROUTDC', 0.0))
     for side in ('t', 'b'):
         v5, v1_ = slow.get('vw5' + side), slow.get('vwq' + side)
         nm = 'ICMHI' if side == 't' else 'ICMLO'
         sg = 1 if side == 't' else -1
         # 1) the follower's tracking error, +10 mV and +100 mV beyond its value at
         #    the ramp start, unless the output swing limits the follower first. In
-        #    the model w = Vout/(A0*d + Vout_start) exactly (ground-referenced gain).
+        #    the model w = (Vout-Vref)/(A*d + Vout_start-Vref) exactly, with A the
+        #    gain into RL: the gain stages are referred to Vref = mid-supply
+        #    (KREF = 0.5), and RL returns to VCM = Vref.
         f1, f2 = slow.get('vf1' + side), slow.get('vf2' + side)
         o1, o2 = slow.get('of1' + side), slow.get('of2' + side)
         swing = fast['voh_rl'] if side == 't' else fast['vol_rl']
@@ -515,7 +547,7 @@ def derive(ac, fast, slow, vxo=2e-3):
             ost = vin0 - slow['ef' + side + '0']
             zz, vv = [], []
             for vi, vo, dd in ((f1, o1, 0.01), (f2, o2, 0.1)):
-                w = vo / (a0 * sg * dd + ost)
+                w = (vo - vref) / (afl * sg * dd + ost - vref)
                 zz.append(logit(min(max(w, 1e-9), 0.999)))
                 dtot = vi - vo
                 vv.append(0.5 * (vi + vo) - sg * 0.5 * math.sqrt(dtot * dtot + 1e-4))
@@ -570,7 +602,7 @@ def derive(ac, fast, slow, vxo=2e-3):
 ORDER = ['A0', 'GBW', 'FP2', 'FP3', 'SR', 'SRR', 'SRF', 'KJUMP', 'VOS', 'IB', 'IOS', 'RID', 'CID', 'RIC', 'CIC',
          'VCLMP', 'RCLMP', 'CMRR', 'FCMRR', 'PSRRP', 'PSRRN', 'FPSRRP', 'FPSRRN', 'VCCN', 'VEEN', 'VCMN',
          'ICCQ', 'ICMHI', 'ICMLO', 'VK', 'PRHI', 'PRLO', 'VPRHI', 'VPRLO', 'IPR', 'VHD', 'VLD', 'ROUT',
-         'ISRC', 'ISNK']
+         'ROUTDC', 'ISRC', 'ISNK']
 
 
 def main():

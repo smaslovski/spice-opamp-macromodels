@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 Stanislav Maslovski. SPDX-License-Identifier: BSD-2-Clause
-"""Characterize the three transistor-level reference op amps (ngspice).
+"""Characterize the four transistor-level reference op amps (ngspice).
 
     cd tests/transistor_level && python3 characterize.py
 
-For each reference it prints the quantities a datasheet would give, and from which
-the OPAMP_FULL parameters in compare_reversal.py were taken:
+For each reference it prints the quantities a datasheet would give (for A, B and C,
+the OPAMP_FULL parameters in compare_reversal.py were taken from them):
 open-loop DC gain and unity-gain frequency, phase margin, slew rates (follower,
 step of half the supply span), output swing (load 10 kOhm; 100 kOhm for C), supply current, input bias current
 (into the + pin of a follower at 0 V), and the
@@ -27,7 +27,10 @@ REFS = {
     'A': ('opa_npn.lib', 'OPA_NPN', 15.0, '10k'),
     'B': ('opa_pjfet.lib', 'OPA_PJFET', 15.0, '10k'),
     'C': ('opa_pmos.lib', 'OPA_PMOS', 2.5, '100k'),
+    'D': ('opa_ua741.lib', 'OPA_UA741', 15.0, '10k'),
 }
+# half-period of the slew-rate step, us (D, the uA741, settles slowly)
+STEP_HALF = {'D': 100}
 
 
 def run(case, tag, body, control):
@@ -54,8 +57,9 @@ def characterize(case):
             "op\nlet ib = i(Vs)\nprint ib")
     r['ib'] = num(t, 'ib')
     # follower, step of half the supply each way: slew rates
-    t = run(case, 'step', f"Vst st 0 PULSE({-st} {st} 10u 10n 10n 40u 80u)\nX3 st o3 vcc vee o3 {{sub}}\nRL o3 0 {{rl}}",
-            "tran 10n 80u\nmeas tran vlo find v(o3) at=9u\nmeas tran vhi find v(o3) at=49u\n"
+    hp = STEP_HALF.get(case, 40)    # half-period of the step, us
+    t = run(case, 'step', f"Vst st 0 PULSE({-st} {st} 10u 10n 10n {hp}u {2 * hp}u)\nX3 st o3 vcc vee o3 {{sub}}\nRL o3 0 {{rl}}",
+            f"tran 10n {2 * hp + 10}u\nmeas tran vlo find v(o3) at=9u\nmeas tran vhi find v(o3) at={hp + 9}u\n"
             "let lo = vlo + 0.1*(vhi-vlo)\nlet hi = vlo + 0.9*(vhi-vlo)\n"
             "meas tran t1 when v(o3)=lo rise=1\nmeas tran t2 when v(o3)=hi rise=1\n"
             "meas tran t3 when v(o3)=hi fall=1\nmeas tran t4 when v(o3)=lo fall=1\n"

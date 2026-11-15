@@ -1,4 +1,4 @@
-* <PART> characterization deck AC (model-to-params skill rev 1.0)
+* <PART> characterization deck AC (model-to-params skill rev 1.2)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -59,6 +59,14 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 8: open-loop differential gain without load (with 1: the DC output resistance)
+Va8 a8 mid AC 0.5
+X8 a8 n8 vcc vee o8 DUT
+Ed8 d8 0 o8 mid 1
+Rd8 d8 s8 1e18
+Cd8 s8 0 1
+E8 n8x mid s8 0 1
+Vb8 n8 n8x AC 0.5 180
 * 6, 7: input impedance. The + pin is fed by an AC current of 1 A; its DC bias
 *    comes from Gb6 (Gb7), a 1 mS conductance to VCM through the same low-pass.
 * 6: - pin at VCM for AC: the + pin sees the differential and its own
@@ -95,6 +103,7 @@ ac dec 20 1m 100G
 let ag = vdb(o1)
 let ph = 180/pi*cph(v(o1))
 meas ac a0_db find ag at=1m
+meas ac a0u_db find vdb(o8) at=1m
 meas ac fu when ag=0
 meas ac ph_fu find ph when ag=0
 meas ac f40 when ag=40
@@ -120,6 +129,7 @@ meas ac fpsn3 when psn=$&x3 fall=1
 meas ac fpsn20 when psn=$&x20 fall=1
 let fz1 = gbwn/100
 let fz2 = gbwn/10
+meas ac zo_dc find vm(o5) at=1m
 meas ac zo_a find vm(o5) at=$&fz1
 meas ac zo_b find vm(o5) at=$&fz2
 meas ac zo_c find vm(o5) at=$&gbwn

@@ -1,4 +1,4 @@
-* <PART> characterization deck FAST (model-to-params skill rev 1.0)
+* <PART> characterization deck FAST (model-to-params skill rev 1.2)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -90,6 +90,10 @@ let f = 4.9*ts
 let g = 3*ts
 meas tran vo2_lo avg v(o2) from=$&a to=$&b
 meas tran vo2_hi avg v(o2) from=$&c to=$&d
+let tj = 1.011*ts
+meas tran vj_r find v(o2) at=$&tj
+let tj = 3.012*ts
+meas tran vj_f find v(o2) at=$&tj
 meas tran ss_lo avg v(o3) from=$&a to=$&b
 meas tran ss_hi avg v(o3) from=$&c to=$&d
 meas tran ss_max max v(o3) from=$&ts to=$&g

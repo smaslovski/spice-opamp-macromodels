@@ -12,16 +12,23 @@ stages are the three common types:
 | **B** (`opa_pjfet.lib`) | p-channel JFET, npn current-mirror load (TL071-like) | ±15 V | at the bottom only |
 | **C** (`opa_pmos.lib`) | p-channel MOSFET, n-MOS current-mirror load | ±2.5 V | never; the output stops at the edge |
 
+A fourth reference, **D** (`opa_ua741.lib`), is the published transistor-level µA741
+of Sedra and Smith. It is not about phase reversal: it is a known, complete circuit for
+testing the characterization method of the `model-to-params` skill and for comparing
+simulation cost (see the last section).
+
 ## Contents
 
 | File | What it is |
 |---|---|
 | `devices.lib` | generic BJT, JFET, MOSFET and diode models |
 | `opa_npn.lib`, `opa_pjfet.lib`, `opa_pmos.lib` | the three op amps, pins `inp inn vcc vee out` |
+| `opa_ua741.lib` | D, the µA741 (source and device parameters in its header), same pins |
 | `schematics/` | schematics (PNG, SVG) and the scripts that draw them (needs [schemdraw](https://schemdraw.readthedocs.io)) |
 | `characterize.py` | measures each op amp as a datasheet would. The macromodel parameters below come from these numbers |
 | `compare_reversal.py` | drives the references and `OPAMP_FULL`, with fitted parameters, beyond the input range. Prints a comparison and writes `reversal_compare.png` |
 | `reversal_compare.png` | the figure written by `compare_reversal.py` |
+| `benchmark_speed.py` | simulation time of `OPAMP_FULL` against D in the same bench |
 
 Both scripts need ngspice, Python 3, numpy and matplotlib:
 
@@ -51,8 +58,8 @@ depends on its bias network, so the reference circuits leave it out.
 ![C: p-MOS input pair](schematics/C_pmos.png)
 
 Characterization by `characterize.py`:
-- **Load:** 10 kΩ for A and B, 100 kΩ for C, whose output stage sources only about 100 µA.
-- **Slew rate:** a follower stepped by half the supply span each way.
+- **Load:** 10 kΩ for A, B and D, 100 kΩ for C, whose output stage sources only about 100 µA.
+- **Slew rate:** a follower stepped by half the supply span each way (held 40 µs, 100 µs for D).
 - **Swing:** open loop, overdriven by ±0.1 V.
 - **Linear range:** where the output of a follower driven by a slow triangle stays within 10 mV of its input.
 
@@ -61,6 +68,7 @@ Characterization by `characterize.py`:
 | A | 74.7 | 1.67 | 65 | 0.54 / 0.66 | 14.22 / −14.17 | 1.15 | 49.4 | −14.18 … +14.11 | +14.99 V |
 | B | 78.8 | 4.78 | 83 | 11.9 / 11.9 | 14.18 / −14.17 | 3.37 | 0.015 | −12.81 … +14.19 | −14.88 V |
 | C | 89.9 | 9.75 | 77 | 6.45 / 6.82 | 2.46 / −2.49 | 0.14 | 0 | −2.29 … +1.81 | no reversal |
+| D | 108.7 | 0.77 | 83 | 0.57 / 0.46 | 14.35 / −13.41 | 1.84 | 34.4 | −13.18 … +14.36 | no reversal |
 
 The "reverses at" column is where the output of the slowly driven follower crosses
 zero against the input. The DC sweeps below give the threshold without the slewing
@@ -147,10 +155,8 @@ How it works:
 VHD/VLD and IB come from the characterization table:
 - GBW = f_u divided by the phase-margin factor (f_u/GBW), and FP2 from the phase
   margin, both tabulated in `skills/datasheet-to-params/SKILL.md`; FP3 = 3.33·FP2.
-- CMRR and PSRR are kept flat (`FCMRR` = `FPSRR` = 1G), since their roll-off was not
-  characterized. (A fixed `FCMRR` of 200 Hz with C's 10 MHz GBW would leave the CMRR
-  below 0 dB at the unity-gain frequency, and the error it adds in a follower would
-  make the step response ring; the defaults now scale with `GBW` to avoid this.)
+- CMRR and PSRR stay at their defaults, since their roll-off was not characterized
+  (the default CMRR is flat; model 1.6).
 - VHD and VLD are the headroom from the swing, corrected for the default `ROUT`.
 - `RID` = 2V_T/I_B for the bipolar pair.
 
@@ -160,11 +166,11 @@ The remaining parameters were fitted:
 
 ```
 A: A0=5.4k GBW=1.78Meg FP2=4.8Meg FP3=16Meg SRR=0.54Meg SRF=0.66Meg VHD=0.67 VLD=0.72
-   ICMHI=0.1 ICMLO=1.5 IB=49n IOS=0 RID=1.05Meg FCMRR=1G FPSRR=1G PRHI=3.5 VPRHI=0.03 IPR=20u
+   ICMHI=0.1 ICMLO=1.5 IB=49n IOS=0 RID=1.05Meg PRHI=3.5 VPRHI=0.03 IPR=20u
 B: A0=8.7k GBW=4.83Meg FP2=35Meg FP3=118Meg SRR=11.9Meg SRF=11.9Meg VHD=0.71 VLD=0.72
-   ICMHI=1 ICMLO=2.8 VK=0.5 IB=15p IOS=0 RID=1T RIC=1T FCMRR=1G FPSRR=1G PRLO=1.6 VPRLO=0.15 IPR=200u
+   ICMHI=1 ICMLO=2.8 VK=0.5 IB=15p IOS=0 RID=1T RIC=1T PRLO=1.6 VPRLO=0.15 IPR=200u
 C: VCCN=2.5 VEEN=-2.5 A0=31k GBW=9.9Meg FP2=57Meg FP3=189Meg SRR=6.45Meg SRF=6.82Meg VHD=0.04
-   VLD=0.01 VXO=0 ICMHI=0.734 ICMLO=-0.1 VK=0.01 IB=0 IOS=0 RID=1T RIC=1T FCMRR=1G FPSRR=1G
+   VLD=0.01 VXO=0 ICMHI=0.734 ICMLO=-0.1 VK=0.01 IB=0 IOS=0 RID=1T RIC=1T
 ```
 
 Notes on the fit:
@@ -224,3 +230,63 @@ What it does not reproduce:
 - **Junction current.** Leave `IPR` at 0 (SR × 30 pF, roughly the tail current of a
   general-purpose op amp) unless the datasheet gives more. If it says a series
   resistor R prevents reversal for an overdrive V_od, use `IPR` = V_od / (0.9·R).
+
+## D: the µA741
+
+`opa_ua741.lib` is the 741 circuit of A. S. Sedra and K. C. Smith, *Microelectronic
+Circuits* (Fig. 10.1 there), transcribed from the SPICE deck in G. W. Roberts and
+A. S. Sedra's SPICE companion to that book (Fig. 10.2 and Table 10.1 of its chapter
+"Analog Integrated Circuits"). The device parameters are those of P. R. Gray and
+R. G. Meyer, *Analysis and Design of Analog Integrated Circuits* (1984), as tabulated
+there. Twenty-four transistors (Q13 as two devices of area 0.75 and 0.25), eleven
+resistors and the 30 pF compensation capacitor; no offset-null pins and no input
+protection. It is the published reference circuit with generic textbook devices, not
+a characterized chip, so its numbers differ from a 741 datasheet (f_u 0.77 MHz here).
+For the schematic, see the book.
+
+**Characterization method.** `tests/model_to_params_check.py` characterizes D with the
+decks of the `model-to-params` skill, converts the results into `OPAMP_FULL`
+parameters, and characterizes the fitted model again. The two agree on the DC gain,
+the unity-gain frequency and the phase there, the CMRR, offset, bias and supply
+current, the swing, the follower's input-range edges and the inverter slew rates.
+What the method finds in D that `OPAMP_FULL` does not reproduce:
+- **Input current beyond the top rail without reversal.** With the input 0.2 V above
+  `vcc`, D's input draws about 470 µA through the forward-biased base-collector
+  junction of Q1, yet its output does not reverse. In `OPAMP_FULL` the junction
+  current (`IPR`) comes only with phase reversal.
+
+**Rejection and DC output resistance** (model 1.6). In every reference the errors per
+volt of `vcc`, `vee` and input common mode add up to 1/A of the *unloaded* gain, as
+for any part without a ground pin. The open-loop output resistance at DC is far
+above `ROUT` in A (2.8 kΩ against 32 Ω), B (0.87 kΩ against 21 Ω) and C (254 kΩ
+against 1.1 kΩ), and falls to `ROUT` above the dominant pole; D's is about `ROUT`.
+With `ROUTDC` and the unloaded `A0` that the skill now measures, the CMRR derived
+from PSRR+ and PSRR− in the fitted model equals the measured one in all four (102.2,
+92.3, 111.2, 105.5 dB). Without `ROUTDC` it was 86.5, 96.4 and 91.9 dB in A, B and C.
+
+**Substrates.** In the deck of the book the transistors have three terminals, so
+SPICE connects their substrate capacitances (`CJS` = 3 pF) to node 0, circuit
+ground. That forward-biases the isolation junction of every transistor whose
+collector sits below ground, and the resulting large capacitances changed D's
+dynamics: f_u 0.61 MHz, 64.5° of phase margin, an 11 % overshoot on a small follower
+step, and a follower slew rate that fell from 0.43 to 0.23 V/µs along the falling
+edge. With the substrates tied to `vee`, as on the chip (and in A and B, whose
+`CJS` is 1 pF), D has f_u 0.77 MHz, 82.6°, no overshoot, and a falling edge that
+slows only from 0.49 to 0.44 V/µs (rising 0.55 V/µs throughout). The earlier
+figures, and the follower-jump artefact that once made the skill measure the jump
+directly, came from the grounded substrates.
+
+**Simulation cost.** `benchmark_speed.py` runs D and `OPAMP_FULL` (version 1.6,
+defaults with `KJUMP=0.27`) through the same follower bench in ngspice:
+
+| Analysis | `OPAMP_FULL` / D, time |
+|---|---|
+| operating point | 0.4–0.6 (239 against 718 Newton iterations) |
+| DC sweep | 1.7–1.9 |
+| AC, noise | 0.6–0.8 |
+| transient, steps ≤ 10 ns | 1.55 |
+| transient, adaptive steps | 1.3–1.6 |
+
+(Ratios vary by about ±10 % from run to run.) The macromodel has a smaller matrix
+(79 equations and 234 non-zeros for the whole bench, against 106 and 524), but ngspice evaluates its behavioural sources at every
+Newton iteration, which costs more than D's 24 compiled transistor models.

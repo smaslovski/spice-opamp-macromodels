@@ -21,7 +21,7 @@ import os, re
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SKILL = os.path.join(ROOT, 'skills', 'model-to-params')
-REV = '1.0'
+REV = '1.2'
 
 HEADER = """\
 * {part} characterization deck {kind} (model-to-params skill rev {rev})
@@ -88,6 +88,14 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 8: open-loop differential gain without load (with 1: the DC output resistance)
+Va8 a8 mid AC 0.5
+X8 a8 n8 vcc vee o8 DUT
+Ed8 d8 0 o8 mid 1
+Rd8 d8 s8 1e18
+Cd8 s8 0 1
+E8 n8x mid s8 0 1
+Vb8 n8 n8x AC 0.5 180
 * 6, 7: input impedance. The + pin is fed by an AC current of 1 A; its DC bias
 *    comes from Gb6 (Gb7), a 1 mS conductance to VCM through the same low-pass.
 * 6: - pin at VCM for AC: the + pin sees the differential and its own
@@ -219,6 +227,7 @@ ac dec 20 1m 100G
 let ag = vdb(o1)
 let ph = 180/pi*cph(v(o1))
 meas ac a0_db find ag at=1m
+meas ac a0u_db find vdb(o8) at=1m
 meas ac fu when ag=0
 meas ac ph_fu find ph when ag=0
 meas ac f40 when ag=40
@@ -244,6 +253,7 @@ meas ac fpsn3 when psn=$&x3 fall=1
 meas ac fpsn20 when psn=$&x20 fall=1
 let fz1 = gbwn/100
 let fz2 = gbwn/10
+meas ac zo_dc find vm(o5) at=1m
 meas ac zo_a find vm(o5) at=$&fz1
 meas ac zo_b find vm(o5) at=$&fz2
 meas ac zo_c find vm(o5) at=$&gbwn
@@ -293,6 +303,10 @@ let f = 4.9*ts
 let g = 3*ts
 meas tran vo2_lo avg v(o2) from=$&a to=$&b
 meas tran vo2_hi avg v(o2) from=$&c to=$&d
+let tj = 1.011*ts
+meas tran vj_r find v(o2) at=$&tj
+let tj = 3.012*ts
+meas tran vj_f find v(o2) at=$&tj
 meas tran ss_lo avg v(o3) from=$&a to=$&b
 meas tran ss_hi avg v(o3) from=$&c to=$&d
 meas tran ss_max max v(o3) from=$&ts to=$&g
@@ -405,6 +419,7 @@ print vsh
 LT_AC = """\
 .ac dec 20 1m 100G
 .meas ac a0_db find mag(V(o1)) at=1m
+.meas ac a0u_db find mag(V(o8)) at=1m
 .meas ac fu when mag(V(o1))=1
 .meas ac ph_fu find V(o1) when mag(V(o1))=1
 .meas ac f40 when mag(V(o1))=100
@@ -419,6 +434,7 @@ LT_AC = """\
 .meas ac psrrn_db find mag(V(o1)/V(o4)) at=1m
 .meas ac fpsn3 when mag(V(o1)/V(o4))=psrrn_db/sqrt(2) fall=1
 .meas ac fpsn20 when mag(V(o1)/V(o4))=psrrn_db/10 fall=1
+.meas ac zo_dc find mag(V(o5)) at=1m
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}
 .meas ac zo_c find mag(V(o5)) at={GBWN}
@@ -450,6 +466,8 @@ LT_FAST = """\
 .meas tran t85ri when V(o2i)={VCM+0.35*VSTEP} td={2*TS} rise=1
 .meas tran vo2_lo avg V(o2) from={0.5*TS} to={0.9*TS}
 .meas tran vo2_hi avg V(o2) from={2.5*TS} to={2.9*TS}
+.meas tran vj_r find V(o2) at={1.011*TS}
+.meas tran vj_f find V(o2) at={3.012*TS}
 .meas tran ss_lo avg V(o3) from={0.5*TS} to={0.9*TS}
 .meas tran ss_hi avg V(o3) from={2.5*TS} to={2.9*TS}
 .meas tran ss_max max V(o3) from={TS} to={3*TS}
@@ -529,7 +547,7 @@ LT_SLOW = """\
 PS_AC = """\
 .OPTIONS NUMDGT=8 NOPAGE
 .AC DEC 10 1m 100G
-.PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4)
+.PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
 """
 

@@ -1,4 +1,4 @@
-* <PART> characterization deck AC (model-to-params skill rev 1.0)
+* <PART> characterization deck AC (model-to-params skill rev 1.2)
 .LIB <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -59,6 +59,14 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 8: open-loop differential gain without load (with 1: the DC output resistance)
+Va8 a8 mid AC 0.5
+X8 a8 n8 vcc vee o8 DUT
+Ed8 d8 0 o8 mid 1
+Rd8 d8 s8 1e18
+Cd8 s8 0 1
+E8 n8x mid s8 0 1
+Vb8 n8 n8x AC 0.5 180
 * 6, 7: input impedance. The + pin is fed by an AC current of 1 A; its DC bias
 *    comes from Gb6 (Gb7), a 1 mS conductance to VCM through the same low-pass.
 * 6: - pin at VCM for AC: the + pin sees the differential and its own
@@ -90,6 +98,6 @@ R7 o7 mid {RL}
 
 .OPTIONS NUMDGT=8 NOPAGE
 .AC DEC 10 1m 100G
-.PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4)
+.PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
 .end

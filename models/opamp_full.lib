@@ -3,7 +3,7 @@
 *
 * Copyright (c) 2026 Stanislav Maslovski
 * SPDX-License-Identifier: BSD-2-Clause  (see LICENSE)
-* Version 1.7 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
+* Version 1.7.1 (2026-11). Developed with the help of Claude Opus 5.5 (Anthropic).
 *
 * Pins: inp inn vcc vee out
 *
@@ -13,7 +13,8 @@
 *   - CMRR, PSRR, PSRR+ and PSRR- with frequency roll-off, consistent with a
 *     part that has no ground pin (see "Supply and common-mode rejection")
 *   - output resistance (ROUT), optional DC output resistance falling above
-*     the dominant pole (ROUTDC), and output capacitance
+*     the dominant pole (ROUTDC), output capacitance, and an optional
+*     output inductance (LOUT, RLOUT) for the high-frequency rise of Zout
 *   - input voltage noise (white + 1/f) and input current noise (white + 1/f,
 *     FCIN = current-noise 1/f corner, independent on each input; 0 = off)
 * NONLINEAR EFFECTS
@@ -29,7 +30,8 @@
 *   - input common-mode range (gm collapses near the rails)
 *   - optional differential input clamp: anti-parallel diodes between inp
 *     and inn (VCLMP, RCLMP); no clamps to the rails
-*   - output voltage swing limited by the supplies (VHD/VLD headroom)
+*   - output voltage swing limited by the supplies (VHD/VLD headroom), rising
+*     with the load current (RSATH/RSATL)
 *   - output current limit (ISRC/ISNK), class-AB crossover dead-zone (VXO)
 *   - supply current = quiescent + load current drawn from the right rail
 *
@@ -208,8 +210,18 @@
 *   DVOST   V      0        offset change across the transition (VOS applies
 *                           below it); 0 = none
 *   DIBT    A      0        bias-current change across the transition, each pin
-*   VHD     V      2        minimum headroom, output to vcc (swing limit)
+*   VHD     V      2        minimum headroom, output to vcc (swing limit),
+*                           without load
 *   VLD     V      2        minimum headroom, output to vee (swing limit)
+*   RSATH   ohm    0        saturation resistance at the top: with the output
+*                           saturated high, the headroom is VHD + RSATH*Iout
+*                           (Iout sourced). 0 = ROUT. Real output stages often
+*                           saturate with a slope unlike the small-signal
+*                           ROUT (a CMOS stage: far lower; a bipolar one:
+*                           often higher). From a datasheet plot of output
+*                           swing vs output current
+*   RSATL   ohm    0        the same at the bottom: headroom VLD + RSATL*Iout
+*                           (Iout sunk). 0 = ROUT
 *  Output stage
 *   ROUT    ohm    75       output resistance (open loop, above the dominant
 *                           pole: the datasheet's r_o)
@@ -221,6 +233,16 @@
 *                           tens of times ROUT for a simple bipolar output,
 *                           hundreds for a common-source (rail-to-rail) one
 *   COUT    F      3p       output capacitance (half to each rail)
+*   LOUT    H      0        output inductance, in series with ROUT: the open-
+*                           loop Zout rises as ROUT + j*w*LOUT above
+*                           ROUT/(2*pi*LOUT) and resonates with COUT. Emitter
+*                           and source followers driven from a high-impedance
+*                           node look inductive; it lowers the phase margin
+*                           with capacitive loads
+*   RLOUT   ohm    0        resistance in parallel with LOUT: Zout levels off
+*                           at ROUT + RLOUT above RLOUT/(2*pi*LOUT), as in a
+*                           follower whose driving resistance is seen through
+*                           a falling beta. 0 = no resistor (pure inductance)
 *   ISRC    A      25m      maximum source current
 *   ISNK    A      25m      maximum sink current
 *   VXO     V      2m       class-AB crossover dead zone: for |Iout| below about
@@ -272,7 +294,7 @@ Hd  out na Vs {K1/CD}
 + VCMN={0.5*(VCCN+VEEN)}
 + ENOISE=20n FCEN=200 INOISE=0.5p FCIN=0
 + ICCQ=1.7m VHD=2 VLD=2 ICMHI=2 ICMLO=2 VK=0.15
-+ ROUT=75 ROUTDC=0 ISRC=25m ISNK=25m VXO=2m COUT=3p
++ ROUT=75 ROUTDC=0 RSATH=0 RSATL=0 ISRC=25m ISNK=25m VXO=2m COUT=3p LOUT=0 RLOUT=0
 + VCLMP=100 RCLMP=100 KJUMP=0
 + PRHI=0 PRLO=0 VPRHI=0 VPRLO=0 IPR=0 VCMT=1 VKT=0.1 DVOST=0 DIBT=0
 
@@ -285,6 +307,17 @@ Hd  out na Vs {K1/CD}
 .param IDIFV={0.5*(SRRV-SRFV)*C1V}  ; half the difference (asymmetric slew)
 .param GM0={PI2*GBW*C1V}           ; small-signal transconductance -> GBW
 .param R1V={A0/GM0}                ; DC gain A0 = GM0*R1V
+* RLOUT = 0: the resistor puts the L||R corner at 100 GHz (a larger one makes
+* the circuit stiff)
+.param RLOUTV={RLOUT>0 ? RLOUT : 6.283e11*(LOUT+1p)}
+.param RSATHV={RSATH>0 ? RSATH : ROUT}
+.param RSATLV={RSATL>0 ? RSATL : ROUT}
+.param KSATH={max(ROUT-RSATHV,0)}
+.param KSATL={max(ROUT-RSATLV,0)}
+.param GSATH={RSATHV>ROUT ? 1/RSATHV : 0}
+.param GSATL={RSATLV>ROUT ? 1/RSATLV : 0}
+.param BSATH={RSATHV>ROUT ? 0 : 1e3}
+.param BSATL={RSATLV>ROUT ? 0 : 1e3}
 .param FP2V={FP2>0 ? FP2 : 3*GBW}
 .param FP3V={FP3>0 ? FP3 : 10*GBW}
 .param VNTH={sqrt(4*1.380649e-23*300.15*1e3)}   ; thermal noise of 1k at 27C
@@ -561,8 +594,10 @@ G1   n1 nref n1 nref {1/R1V}
 C1   n1 nref {C1V}
 R1lk n1 nref 1e15
 * soft clamp of the gain node to the swing limits (fast overdrive recovery)
-Bhi  nhi 0 V = V(vcc)-{VHD}
-Blo  nlo 0 V = V(vee)+{VLD}
+* the clamp levels move with the output current when RSATH (RSATL) < ROUT, so
+* that the saturated headroom is VHD + RSATH*Iout (feedback gain 1 - RSAT/ROUT < 1)
+Bhi  nhi 0 V = V(vcc)-{VHD}+{KSATH}*max(V(nicmd),0)
+Blo  nlo 0 V = V(vee)+{VLD}-{KSATL}*max(-V(nicmd),0)
 Bclp n1 nref I = {IMAXV/1e-3}*(max(V(n1)-V(nhi),0)+min(V(n1)-V(nlo),0))
 
 * ---- higher-order poles (noiseless 1k / C sections) --------------------------
@@ -576,8 +611,17 @@ C3   n3 nref {1/(PI2*FP3V*1e3)}
 R3lk n3 nref 1e15
 
 * ---- output stage ----------------------------------------------------------------
-* Norton output: I = (V(n3)-V(out) with crossover dead-zone)/ROUT, hard-limited
-Bicmd nicmd 0 V = min({ISRC},max(-{ISNK},((V(n3)-V(out))-0.5*{VXO}*tanh((V(n3)-V(out))/({VXO}+1e-9)))/{ROUT}))
+* output inductance: V(nld) = I*(s*LOUT || RLOUT), so that the drive is V(n3) minus
+* that drop and Zout = ROUT + (s*LOUT || RLOUT), in parallel with COUT.
+* LOUT = 0 leaves a 1 pH stand-in
+Gld  0 nld nicmd 0 1
+Lld  nld 0 {LOUT+1p}
+Grld nld 0 nld 0 {1/RLOUTV}
+Bn3l n3l 0 V = V(n3)-V(nld)
+* Norton output: I = (V(n3l)-V(out) with crossover dead-zone)/ROUT, hard-limited
+* to ISRC/ISNK and, when RSATH (RSATL) > ROUT, to the headroom over RSATH (RSATL)
+Bicmd nicmd 0 V = min({ISRC},min({GSATH}*(V(vcc)-{VHD}-V(out))+{BSATH},max(-{ISNK},max({GSATL}*(V(vee)+{VLD}-V(out))-{BSATL},
++ ((V(n3l)-V(out))-0.5*{VXO}*tanh((V(n3l)-V(out))/({VXO}+1e-9)))/{ROUT}))))
 * smooth split into source (from VCC) and sink (to VEE) currents:
 * Bsrc - Bsnk = Icmd exactly, and the slope is well-defined at I = 0
 * DC output resistance ROUTDC: the output current loads the gain node, which

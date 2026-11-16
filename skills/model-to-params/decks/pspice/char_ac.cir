@@ -1,4 +1,4 @@
-* <PART> characterization deck AC (model-to-params skill rev 1.3)
+* <PART> characterization deck AC (model-to-params skill rev 1.4)
 .LIB <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -11,6 +11,7 @@ XV inp inn vcc vee out <VENDOR_SUBCKT>
 * derived (do not edit)
 .param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
 .param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+.param VOD={max(0.5,min(5,3*SRN/(6.283*GBWN)))}
 
 Vcc vcc 0 {VCC}
 Vee vee 0 {VEE}
@@ -59,6 +60,20 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 9, 10: the same at idle (9) and at ILOAD sunk (10): with 5, the class-AB
+*    crossover (VXO) shows as a higher impedance at idle
+X9 mid n9 vcc vee o9 DUT
+Ed9 d9 0 o9 mid 1
+Rd9 d9 s9 1e18
+Cd9 s9 0 1
+E9 n9 mid s9 0 1
+I9 o9 mid DC 0 AC 1
+X10 mid n10 vcc vee o10 DUT
+Ed10 d10 0 o10 mid 1
+Rd10 d10 s10 1e18
+Cd10 s10 0 1
+E10 n10 mid s10 0 1
+I10 o10 mid DC {-ILOAD} AC 1
 * 8: open-loop differential gain without load (with 1: the DC output resistance)
 Va8 a8 mid AC 0.5
 X8 a8 n8 vcc vee o8 DUT
@@ -97,8 +112,9 @@ I7 mid p7 AC 1
 R7 o7 mid {RL}
 
 .OPTIONS NUMDGT=8 NOPAGE
-.AC DEC 10 1m 100G
+.AC DEC 20 1m 100G
 .PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
 .PRINT AC VP(o2) VP(o3) VP(o4)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
+.PRINT AC VM(o9) VM(o10) VR(o9) VI(o9)
 .end

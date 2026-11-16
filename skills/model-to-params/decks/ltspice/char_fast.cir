@@ -1,4 +1,4 @@
-* <PART> characterization deck FAST (model-to-params skill rev 1.3)
+* <PART> characterization deck FAST (model-to-params skill rev 1.4)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -11,6 +11,7 @@ XV inp inn vcc vee out <VENDOR_SUBCKT>
 * derived (do not edit)
 .param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
 .param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+.param VOD={max(0.5,min(5,3*SRN/(6.283*GBWN)))}
 
 Vcc vcc 0 {VCC}
 Vee vee 0 {VEE}
@@ -56,6 +57,18 @@ R9 c9 p9 100
 X9 p9 mid vcc vee o9 DUT
 R10 c9 p10 1k
 X10 p10 mid vcc vee o10 DUT
+* 11: open loop, no load, overdriven from -VOD to +VOD at TS and back at 3*TS
+*     (through 1 kohm, for input clamps): the slew rate where the output crosses
+*     VCM, independent of the load. VOD = 3*SRN/(2*pi*GBWN) saturates the input
+*     stage (0.5 to 5 V)
+Vd11 d11 mid PULSE({-VOD} {VOD} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+R11 d11 p11 1k
+X11 p11 mid vcc vee o11 DUT
+* 12, 13: as 4, into RL/10 (12) and RL/100 (13): saturation voltage vs current
+X12 d4 mid vcc vee o12 DUT
+R12 o12 mid {RL/10}
+X13 d4 mid vcc vee o13 DUT
+R13 o13 mid {RL/100}
 
 .options plotwinsize=0
 .tran 0 {5*TS} 0 {TS/500}
@@ -85,6 +98,14 @@ X10 p10 mid vcc vee o10 DUT
 .meas tran vol_nl avg V(o5) from={4.5*TS} to={4.9*TS}
 .meas tran isrc avg I(V6) from={2*TS} to={2.4*TS}
 .meas tran isnk avg I(V6) from={4.5*TS} to={4.9*TS}
+.meas tran voh_r10 avg V(o12) from={2*TS} to={2.4*TS}
+.meas tran vol_r10 avg V(o12) from={4.5*TS} to={4.9*TS}
+.meas tran voh_r100 avg V(o13) from={2*TS} to={2.4*TS}
+.meas tran vol_r100 avg V(o13) from={4.5*TS} to={4.9*TS}
+.meas tran tolr1 when V(o11)={VCM-0.1*VSTEP} rise=1
+.meas tran tolr2 when V(o11)={VCM+0.1*VSTEP} rise=1
+.meas tran tolf1 when V(o11)={VCM+0.1*VSTEP} td={2*TS} fall=1
+.meas tran tolf2 when V(o11)={VCM-0.1*VSTEP} td={2*TS} fall=1
 .meas tran rt_t1 when V(o7)={VCM-0.2*(VCM-VEE)} fall=1
 .meas tran rt_t2 when V(o7)={VCM-0.6*(VCM-VEE)} fall=1
 .meas tran rt_end find V(o7) at={2.9*TS}

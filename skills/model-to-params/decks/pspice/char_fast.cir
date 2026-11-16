@@ -1,4 +1,4 @@
-* <PART> characterization deck FAST (model-to-params skill rev 1.3)
+* <PART> characterization deck FAST (model-to-params skill rev 1.4)
 .LIB <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -11,6 +11,7 @@ XV inp inn vcc vee out <VENDOR_SUBCKT>
 * derived (do not edit)
 .param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
 .param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+.param VOD={max(0.5,min(5,3*SRN/(6.283*GBWN)))}
 
 Vcc vcc 0 {VCC}
 Vee vee 0 {VEE}
@@ -56,10 +57,23 @@ R9 c9 p9 100
 X9 p9 mid vcc vee o9 DUT
 R10 c9 p10 1k
 X10 p10 mid vcc vee o10 DUT
+* 11: open loop, no load, overdriven from -VOD to +VOD at TS and back at 3*TS
+*     (through 1 kohm, for input clamps): the slew rate where the output crosses
+*     VCM, independent of the load. VOD = 3*SRN/(2*pi*GBWN) saturates the input
+*     stage (0.5 to 5 V)
+Vd11 d11 mid PULSE({-VOD} {VOD} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+R11 d11 p11 1k
+X11 p11 mid vcc vee o11 DUT
+* 12, 13: as 4, into RL/10 (12) and RL/100 (13): saturation voltage vs current
+X12 d4 mid vcc vee o12 DUT
+R12 o12 mid {RL/10}
+X13 d4 mid vcc vee o13 DUT
+R13 o13 mid {RL/100}
 
 .OPTIONS NUMDGT=8 NOPAGE
 .TRAN {TS/100} {5*TS} 0 {TS/500}
 .PRINT TRAN V(o1,mid) I(Vp1) I(Vn1) I(Vcc1) V(o2) V(o2i) V(o3)
 .PRINT TRAN V(o4) V(o5) I(V6) V(o7) V(o8)
 .PRINT TRAN V(p9,mid) V(c9,p9) V(p10,mid) V(c9,p10)
+.PRINT TRAN V(o11) V(o12) V(o13)
 .end

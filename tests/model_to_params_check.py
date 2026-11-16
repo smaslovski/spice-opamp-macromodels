@@ -29,7 +29,7 @@ TL = os.path.abspath(os.path.join(HERE, 'transistor_level'))
 os.makedirs(OUT, exist_ok=True)
 
 
-def characterize(tag, include, xline, vxo=2e-3, **hdr):
+def characterize(tag, include, xline, **hdr):
     logs = []
     for kind in ('ac', 'fast', 'slow'):
         cir = os.path.join(OUT, f'{tag}_{kind}.cir')
@@ -37,22 +37,23 @@ def characterize(tag, include, xline, vxo=2e-3, **hdr):
         out = subprocess.run(['ngspice', '-b', cir], cwd=OUT, capture_output=True, text=True).stdout
         open(os.path.join(OUT, f'{tag}_{kind}.log'), 'w').write(out)
         logs.append(lp.parse(out))
-    P, src, notes = lp.derive(*logs, vxo=vxo)
+    P, src, notes = lp.derive(*logs)          # VXO detected from |Zout| at idle vs +-ILOAD
     return P, notes, logs
 
 
-def instance(P, vxo):
-    return 'OPAMP_FULL PARAMS: ' + ' '.join(f'{k}={P[k]:.6g}' for k in lp.ORDER if k in P) + f' VXO={vxo:g}'
+def instance(P):
+    return 'OPAMP_FULL PARAMS: ' + ' '.join(f'{k}={P[k]:.6g}' for k in lp.ORDER if k in P)
 
 
 # ---- 1. round trips -------------------------------------------------------------
 TRUE = {
     'defaults': ('', {}, 2e-3),
     'npn_rev': ('A0=5.4k GBW=1.78Meg FP2=4.8Meg FP3=16Meg SRR=0.54Meg SRF=0.66Meg VHD=0.67 VLD=0.72 ICMHI=0.1 '
-                'ICMLO=1.5 IB=49n IOS=0 RID=1.05Meg PRHI=3.5 VPRHI=0.03 IPR=20u ROUT=33 ROUTDC=2850',
+                'ICMLO=1.5 IB=49n IOS=0 RID=1.05Meg PRHI=3.5 VPRHI=0.03 IPR=20u ROUT=33 ROUTDC=2850 RSATH=60 RSATL=15 '
+                'LOUT=1u RLOUT=40 COUT=12p',
                 dict(GBWN='1.8Meg', SRN='0.6Meg', W=2), 2e-3),
     'pjfet_rev': ('A0=8.7k GBW=4.83Meg FP2=35Meg FP3=118Meg SR=11.9Meg VHD=0.71 VLD=0.72 ICMHI=1 ICMLO=2.8 VK=0.5 '
-                  'IB=15p IOS=0 RID=1T RIC=1T PRLO=1.6 VPRLO=0.15 IPR=200u',
+                  'IB=15p IOS=0 RID=1T RIC=1T PRLO=1.6 VPRLO=0.15 IPR=200u LOUT=0.4u COUT=8p',
                   dict(GBWN='5Meg', SRN='12Meg', W=4), 2e-3),
     'cmos_rr': ('A0=100k GBW=5Meg SR=5Meg FP2=15Meg FP3=50Meg VOS=2m IB=1p IOS=0.5p RID=1T CID=2p RIC=2T CIC=1.5p '
                 'CMRR=10k FCMRR=5k PSRR=10k FPSRR=1k VCCN=5 VEEN=0 ICCQ=1m VHD=0.05 VLD=0.05 '
@@ -66,9 +67,9 @@ TRUE = {
 # (CMRR, PSRRP, PSRRN are replaced in truth() by what the rejection rules give)
 DEF = dict(A0=200e3, GBW=1e6, VOS=1e-3, IB=80e-9, IOS=20e-9, RID=2e6, CID=1.4e-12, RIC=400e6, CIC=0.75e-12,
            CMRR=31.6e3, PSRRP=31.6e3, PSRRN=31.6e3, ICCQ=1.7e-3, ICMHI=2, ICMLO=2, VK=0.15, VHD=2, VLD=2,
-           ROUT=75, ISRC=25e-3, ISNK=25e-3)
+           ROUT=75, ISRC=25e-3, ISNK=25e-3, COUT=3e-12)
 # parameters that can only be found as limits (or are model-internal)
-SKIP = {'FP2', 'FP3', 'COUT', 'VXO', 'FCMRR', 'FPSRR', 'VCCN', 'VEEN'}
+SKIP = {'FP2', 'FP3', 'VXO', 'FCMRR', 'FPSRR', 'VCCN', 'VEEN'}
 
 
 def truth(params):
@@ -94,9 +95,13 @@ def roundtrips():
     bad = 0
     for tag, (params, hdr, vxo) in TRUE.items():
         P, notes, _ = characterize('rt_' + tag, f'.include {LIB}', 'XV inp inn vcc vee out OPAMP_FULL ' +
-                                   (f'PARAMS: {params}' if params else ''), vxo=vxo, **hdr)
+                                   (f'PARAMS: {params}' if params else ''), **hdr)
         t = truth(params)
         errs = []
+        if (P['VXO'] > 0) != (vxo > 0):           # crossover detected from |Zout| at idle
+            errs.append((1.0, 'VXO', P['VXO'], vxo))
+        if ('LOUT' in P) != ('LOUT' in params) or ('RLOUT' in P) != ('RLOUT' in params):
+            errs.append((1.0, 'LOUT/RLOUT', P.get('LOUT', 0), 'set' if 'LOUT' in params else 'none'))
         for k, v in P.items():
             if k in SKIP or k not in t:
                 continue
@@ -143,9 +148,9 @@ def closure():
     for name, (lib, sub, hdr, vxo) in REFS.items():
         inc = f'.include {TL}/devices.lib\n.include {TL}/{lib}'
         tag = 'tl_' + name.split()[0]
-        P, notes, logs = characterize(tag, inc, f'XV inp inn vcc vee out {sub}', vxo=vxo, **hdr)
-        inst = instance(P, vxo)
-        P2, _, logs2 = characterize(tag + '_fit', f'.include {LIB}', 'XV inp inn vcc vee out ' + inst, vxo=vxo, **hdr)
+        P, notes, logs = characterize(tag, inc, f'XV inp inn vcc vee out {sub}', **hdr)
+        inst = instance(P)
+        P2, _, logs2 = characterize(tag + '_fit', f'.include {LIB}', 'XV inp inn vcc vee out ' + inst, **hdr)
         print(f'\n  {name}: X1 inp inn vcc vee out {inst}')
         for n in notes:
             print('    - ' + n)

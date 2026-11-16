@@ -166,6 +166,28 @@ X28  0 n28 vcc6 vee6 o28 OPAMP_FULL PARAMS: PSRRP=31.62k PSRRN=31.62k
 Lfb28 o28 n28 1e9
 Cg28 n28 0 1e9
 
+* --- 21. Saturation resistance: open loop, overdriven, 10 mA load current.
+*         ROUT = 50, VHD = VLD = 1, VXO = 0. Expected headroom: RSATH = 100
+*         sourcing 1 + 100*10m = 2.0 V (o29 = 13.0 V); RSATL = 10 sinking
+*         1 + 10*10m = 1.1 V (o30 = -13.9 V); default (= ROUT) sourcing 1.5 V
+*         (o31 = 13.5 V)
+Vp29 p29 0 0.5
+X29  p29 0 vcc vee o29 OPAMP_FULL PARAMS: ROUT=50 RSATH=100 RSATL=10 VHD=1 VLD=1 VXO=0
+I29  o29 vee DC 10m
+Vp30 p30 0 -0.5
+X30  p30 0 vcc vee o30 OPAMP_FULL PARAMS: ROUT=50 RSATH=100 RSATL=10 VHD=1 VLD=1 VXO=0
+I30  vcc o30 DC 10m
+X31  p29 0 vcc vee o31 OPAMP_FULL PARAMS: ROUT=50 VHD=1 VLD=1 VXO=0
+I31  o31 vee DC 10m
+
+* --- 22. Output inductance: open-loop Zout as in test 19, with ROUT = 33, LOUT = 1u,
+*         RLOUT = 40, COUT = 12p, VXO = 0. Theory: |33 + (jwL || 40)| || COUT =
+*         34.5 ohm at 1 MHz, 64.9 ohm at 10 MHz, 72.1 ohm at 30 MHz
+X32  0 n32 vcc vee o32 OPAMP_FULL PARAMS: ROUT=33 LOUT=1u RLOUT=40 COUT=12p VXO=0
+Lfb32 o32 n32 1e9
+Cg32 n32 0 1e9
+I32  0 o32 AC 1
+
 * --- 18. No ground node: floating follower (input shorted to the supply common,
 *         AC and DC on the common). expected: V(o23)-V(c23) = VOS, unchanged when the
 *         whole circuit is lifted by 100 V, no AC output (< -200 dB) and no current
@@ -196,6 +218,8 @@ Rl23  o23 c23 1k
   * test 18: floating follower (expected VOS = 1 mV and 0 A)
   let float18 = v(o23)-v(c23)
   print float18 i(Vfl23)
+  * test 21: saturation resistance (expected 13.0, -13.9, 13.5 V)
+  print v(o29) v(o30) v(o31)
 
   ac dec 20 0.1 100Meg
   let ad    = vdb(o1)
@@ -224,6 +248,10 @@ Rl23  o23 c23 1k
   meas ac zo19_dc find vm(o24) at=0.1
   meas ac zo19_fd find vm(o24) at=207
   meas ac zo19_1m find vm(o24) at=1Meg
+  * test 22: output inductance (expected 34.5, 64.9 and 72.1 ohm)
+  meas ac zo22_1m find vm(o32) at=1Meg
+  meas ac zo22_10m find vm(o32) at=10Meg
+  meas ac zo22_30m find vm(o32) at=30Meg
   * test 20: signed values (expected 84.7 and 106.0 dB, 180 deg)
   let cmrr20a = vdb(o1)-vdb(o25)
   let cmrr20b = vdb(o1)-vdb(o26)

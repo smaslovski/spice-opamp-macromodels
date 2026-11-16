@@ -29,7 +29,8 @@ def num(s):
 
 # ---- parsers: every log becomes {name: value} with the ngspice names and units ----
 WHEN = {'fu', 'f40', 'f20', 'fcm3', 'fcm20', 'fpsp3', 'fpsp20', 'fpsn3', 'fpsn20',
-        't50r', 't85r', 't50f', 't85f', 't50ri', 't85ri', 't50fi', 't85fi', 'rt_t1', 'rt_t2', 'rb_t1', 'rb_t2'}
+        't50r', 't85r', 't50f', 't85f', 't50ri', 't85ri', 't50fi', 't85fi', 'rt_t1', 'rt_t2', 'rb_t1', 'rb_t2',
+        'tolr1', 'tolr2', 'tolf1', 'tolf2'}
 DB = {'a0_db', 'cmrr_db', 'cmrr_gbw', 'psrrp_db', 'psrrn_db'}
 
 
@@ -149,6 +150,9 @@ def window(x, y, a, b, fn):
     return fn(v) if v else None
 
 
+ZH_MULT = (0.5, 1, 2, 5, 10, 20, 30)    # complex Zout at GBWN * these
+
+
 def avg(v):
     return sum(v) / len(v)
 
@@ -190,6 +194,13 @@ def parse_pspice(txt):
         for k, fx in (('zo_a', g / 100), ('zo_b', g / 10), ('zo_c', g)):
             r[k] = interp_y(f, c['vm(o5)'], fx, logx=True)
         r['zo_dc'] = c['vm(o5)'][0]
+        for k, col in (('zo_b0', 'vm(o9)'), ('zo_bn', 'vm(o10)')):
+            if col in c:
+                r[k] = interp_y(f, c[col], g / 10, logx=True)
+        if 'vr(o9)' in c:
+            for i, m in enumerate(ZH_MULT):
+                r[f'zh{i}_re'] = interp_y(f, c['vr(o9)'], g * m, logx=True)
+                r[f'zh{i}_im'] = interp_y(f, c['vi(o9)'], g * m, logx=True)
         if 'vdb(o8)' in c:
             r['a0u_db'] = c['vdb(o8)'][0]
         r['zd_re0'], r['zc_re0'] = c['vr(p6)'][0], c['vr(p7)'][0]
@@ -224,6 +235,13 @@ def parse_pspice(txt):
             r['vol_' + k] = window(t, c[col], 4.5 * ts, 4.9 * ts, avg)
         r['isrc'] = window(t, c['i(v6)'], 2 * ts, 2.4 * ts, avg)
         r['isnk'] = window(t, c['i(v6)'], 4.5 * ts, 4.9 * ts, avg)
+        if 'v(o11)' in c:
+            for k, col in (('r10', 'v(o12)'), ('r100', 'v(o13)')):
+                r['voh_' + k] = window(t, c[col], 2 * ts, 2.4 * ts, avg)
+                r['vol_' + k] = window(t, c[col], 4.5 * ts, 4.9 * ts, avg)
+            o11, lo, hi = c['v(o11)'], vcm - 0.1 * p['vstep'], vcm + 0.1 * p['vstep']
+            r['tolr1'], r['tolr2'] = interp_x(t, o11, lo, 1), interp_x(t, o11, hi, 1)
+            r['tolf1'], r['tolf2'] = interp_x(t, o11, hi, -1, 2 * ts), interp_x(t, o11, lo, -1, 2 * ts)
         vcc, vee = p['vcc'], p['vee']
         r['rt_t1'] = interp_x(t, c['v(o7)'], vcm - 0.2 * (vcm - vee), -1)
         r['rt_t2'] = interp_x(t, c['v(o7)'], vcm - 0.6 * (vcm - vee), -1)
@@ -297,13 +315,14 @@ def logit(p):
     return math.log(p / (1 - p))
 
 
-def pm_model(fp2, gbw, a0, fout):
-    """Phase margin and unity-gain frequency of the OPAMP_FULL differential gain, FP3 = 3.33*FP2."""
+def pm_model(fp2, gbw, a0, hout):
+    """Phase margin and unity-gain frequency of the OPAMP_FULL differential gain, FP3 = 3.33*FP2;
+    hout(f) is the output network (ROUT, LOUT, COUT into the load), normalized to 1 at DC."""
     fp1, fp3 = gbw / a0, 3.33 * fp2
 
     def a(f):
-        z = complex(a0)
-        for p in (fp1, fp2, fp3, fout):
+        z = complex(a0) * hout(f)
+        for p in (fp1, fp2, fp3):
             z /= complex(1, f / p)
         return z
     lo, hi = gbw * 1e-3, gbw * 10
@@ -313,11 +332,77 @@ def pm_model(fp2, gbw, a0, fout):
             lo = m
         else:
             hi = m
-    ph = math.degrees(math.atan(lo / fp1) + math.atan(lo / fp2) + math.atan(lo / fp3) + math.atan(lo / fout))
+    h = hout(lo)
+    ph = math.degrees(math.atan(lo / fp1) + math.atan(lo / fp2) + math.atan(lo / fp3) - math.atan2(h.imag, h.real))
     return 180 - ph, lo
 
 
-def derive(ac, fast, slow, vxo=2e-3):
+def nelder_mead(fun, x0, step=0.5, iters=600):
+    """Minimum of fun(x) near x0 (a list), by the Nelder-Mead simplex."""
+    n = len(x0)
+    pts = [list(x0)] + [[x0[j] + (step if j == i else 0) for j in range(n)] for i in range(n)]
+    val = [fun(p) for p in pts]
+    for _ in range(iters):
+        order = sorted(range(n + 1), key=lambda i: val[i])
+        pts, val = [pts[i] for i in order], [val[i] for i in order]
+        cen = [sum(p[j] for p in pts[:-1]) / n for j in range(n)]
+        refl = [2 * cen[j] - pts[-1][j] for j in range(n)]
+        fr = fun(refl)
+        if fr < val[0]:
+            exp_ = [3 * cen[j] - 2 * pts[-1][j] for j in range(n)]
+            fe = fun(exp_)
+            pts[-1], val[-1] = (exp_, fe) if fe < fr else (refl, fr)
+        elif fr < val[-2]:
+            pts[-1], val[-1] = refl, fr
+        else:
+            con = [0.5 * (cen[j] + pts[-1][j]) for j in range(n)]
+            fc = fun(con)
+            if fc < val[-1]:
+                pts[-1], val[-1] = con, fc
+            else:
+                pts = [pts[0]] + [[0.5 * (pts[0][j] + p[j]) for j in range(n)] for p in pts[1:]]
+                val = [val[0]] + [fun(p) for p in pts[1:]]
+    i = min(range(n + 1), key=lambda i: val[i])
+    return pts[i], val[i]
+
+
+def fit_zout_hf(f, z, r):
+    """Fit Zout = (R + (jwL || RL)) || 1/(jwC) to complex points z at frequencies f, with
+    R fixed. Returns {form: (L, RL, C, rms error)}, the error in ln|Z| and phase (rad)."""
+    w = [2 * math.pi * x for x in f]
+
+    def model(L, RL, C, wk):
+        zl = 0 if L == 0 else (1j * wk * L if RL is None else 1j * wk * L * RL / (RL + 1j * wk * L))
+        return 1 / (1 / (r + zl) + 1j * wk * C)
+
+    def err(L, RL, C):
+        e = 0.0
+        for wk, zk in zip(w, z):
+            q = model(L, RL, C, wk) / zk
+            e += math.log(abs(q)) ** 2 + math.atan2(q.imag, q.real) ** 2
+        return math.sqrt(e / (2 * len(z)))
+    # starting values: C from the highest point, L from the largest rise of |Z|
+    zmax = max(abs(x) for x in z)
+    k = max(range(len(z)), key=lambda i: abs(z[i]))
+    l0 = max(math.sqrt(max(zmax ** 2 - r ** 2, 0.01 * r * r)) / w[k], 1e-12)
+    c0 = max(1 / (w[-1] * zmax), 1e-15)
+    out = {}
+    x, e = nelder_mead(lambda p: err(0, None, math.exp(p[0])), [math.log(c0)])
+    out['C'] = (0.0, 0.0, math.exp(x[0]), e)
+    x, e = nelder_mead(lambda p: err(math.exp(p[0]), None, math.exp(p[1])), [math.log(l0), math.log(c0)])
+    out['LC'] = (math.exp(x[0]), 0.0, math.exp(x[1]), e)
+    best = None
+    for rp0 in (0.5 * r, 2 * r, 10 * r):
+        x, e = nelder_mead(lambda p: err(math.exp(p[0]), math.exp(p[1]), math.exp(p[2])),
+                           [math.log(l0), math.log(rp0), math.log(c0)])
+        if best is None or e < best[1]:
+            best = (x, e)
+    x, e = best
+    out['LRC'] = (math.exp(x[0]), math.exp(x[1]), math.exp(x[2]), e)
+    return out
+
+
+def derive(ac, fast, slow, vxo=None):
     P, notes = {}, []
     src = {}
 
@@ -328,12 +413,65 @@ def derive(ac, fast, slow, vxo=2e-3):
     put('VEEN', vee, 'deck supply')
     if abs(vcm - 0.5 * (vcc + vee)) > 1e-6:
         put('VCMN', vcm, 'deck VCM')
-    # output resistance first: it corrects the loaded measurements
+    # output resistance first: it corrects the loaded measurements. The class-AB
+    # crossover (VXO) doubles the model's small-signal ROUT at idle; it is used
+    # when the vendor model's |Zout| at idle is clearly above that at +-ILOAD.
     rout = ac['zo_b']
-    put('ROUT', rout, f"|Zout| at GBWN/10 = {sig(ac['zo_b'])} ohm (GBWN/100: {sig(ac['zo_a'])}, GBWN: {sig(ac['zo_c'])})")
+    zhow = f"|Zout| at GBWN/10 = {sig(ac['zo_b'])} ohm at ILOAD sourced (GBWN/100: {sig(ac['zo_a'])}, GBWN: {sig(ac['zo_c'])})"
+    if vxo is None and 'zo_b0' in ac:
+        z1 = 0.5 * (ac['zo_b'] + ac['zo_bn'])
+        ratio = ac['zo_b0'] / z1
+        if ratio >= 1.4:
+            vxo, rout = 2e-3, z1
+            zhow = (f"|Zout| at GBWN/10 at +-ILOAD (mean of {sig(ac['zo_b'])} and {sig(ac['zo_bn'])} ohm); "
+                    f"at idle {sig(ac['zo_b0'])} ohm ({ratio:.2f} x): crossover, VXO = 2m (the model doubles ROUT at idle)")
+        else:
+            vxo, rout = 0, ac['zo_b0']
+            zhow = (f"|Zout| at GBWN/10 at idle = {sig(ac['zo_b0'])} ohm (at ILOAD sourced {sig(ac['zo_b'])}, sunk "
+                    f"{sig(ac['zo_bn'])}): no crossover rise at idle ({ratio:.2f} x), VXO = 0")
+        if max(ac['zo_b'], ac['zo_bn']) > 1.5 * min(ac['zo_b'], ac['zo_bn']):
+            notes.append(f"ROUT: |Zout| differs between sourcing ({sig(ac['zo_b'])} ohm) and sinking ({sig(ac['zo_bn'])} ohm) "
+                         "ILOAD; the model has one ROUT. The output resistance of the vendor model depends on the output current.")
+    elif vxo is None:
+        vxo = 2e-3
+        notes.append('VXO: the AC log has no idle/sink |Zout| (deck older than rev 1.4); VXO = 2m assumed.')
+    put('ROUT', rout, zhow)
+    put('VXO', vxo, 'see ROUT')
     if max(ac['zo_a'], ac['zo_c']) > 2 * min(ac['zo_a'], ac['zo_c']):
         notes.append('ROUT: the open-loop output impedance varies by more than 2x between GBWN/100 and GBWN; the value at GBWN/10 is used.')
     reff = (2 if vxo > 0 else 1) * rout             # small-signal ROUT at idle (VXO > 0 doubles it)
+    # high-frequency Zout at idle: LOUT (with RLOUT across it) in series with the
+    # model's idle resistance REFF, and COUT across the whole
+    if 'zh0_re' in ac:
+        g = ac['gbwn']
+        fz = [g * m for m in ZH_MULT]
+        # the deck's AC source draws 1 A from the output, so the logged voltage is -Zout
+        zz = [-complex(ac[f'zh{i}_re'], ac[f'zh{i}_im']) for i in range(len(ZH_MULT))]
+        fits = fit_zout_hf(fz, zz, reff)
+        rise = max(abs(x) for x in zz) / reff
+        pts = ', '.join(f'{sig(abs(x))}' for x in zz)
+        how = f"|Zout| at idle at GBWN x {', '.join(f'{m:g}' for m in ZH_MULT)}: {pts} ohm (REFF {sig(reff)})"
+        lc, lrc, co = fits['LC'], fits['LRC'], fits['C']
+        if rise > 1.1:
+            # the parallel resistor only if it clearly improves the fit
+            L, RLp, C, e = lrc if lrc[3] < 0.7 * lc[3] and lrc[1] < 30 * reff else lc
+            form = 'REFF + (sLOUT || RLOUT), || COUT' if RLp else 'REFF + sLOUT, || COUT'
+            put('LOUT', L, f"{how}: rises {rise:.2f} x; fit of {form}, rms error {e * 100:.0f} %"
+                           f" (without RLOUT {lc[3] * 100:.0f} %, without LOUT {co[3] * 100:.0f} %)")
+            if RLp:
+                put('RLOUT', RLp, 'see LOUT')
+        else:
+            L, C, e = 0, co[2], co[3]
+            how += f": no rise above REFF ({rise:.2f} x), LOUT = 0; fit of REFF || COUT, rms error {e * 100:.0f} %"
+        if e > 0.15:
+            notes.append(f"LOUT/COUT: the fitted output network misses the vendor model's Zout by {e * 100:.0f} % rms "
+                         "above GBW; capacitive-load stability is approximate.")
+        wc = 2 * math.pi * fz[-1] * C * max(abs(x) for x in zz)
+        if wc < 0.05:
+            notes.append(f"COUT: the output capacitance hardly shows in |Zout| up to {sig(fz[-1])} Hz "
+                         f"(fitted {sig(C)} F); default kept.")
+        else:
+            put('COUT', C, 'see LOUT' if L else how)
     kl = (rl + reff) / rl
     # DC output resistance and unloaded gain: from the gain with and without the
     # load (both at idle, where the model's small-signal ROUT is REFF), so that
@@ -363,24 +501,28 @@ def derive(ac, fast, slow, vxo=2e-3):
         pm -= 360
     while pm <= -180:
         pm += 360
-    cout = 3e-12
-    fout = 1 / (2 * math.pi * (reff * rl / (reff + rl)) * cout)
+    # the output network as the model will have it: REFF + (sLOUT || RLOUT), COUT || RL
+    def hout(f, L=P.get('LOUT', 0), RLp=P.get('RLOUT'), C=P.get('COUT', 3e-12)):
+        w = 2 * math.pi * f
+        zl = 0 if not L else (1j * w * L if not RLp else 1j * w * L * RLp / (RLp + 1j * w * L))
+        zload = 1 / (1 / rl + 1j * w * C)
+        return zload / (zload + reff + zl) * (rl + reff) / rl
     # FP2/GBW from the phase margin, then GBW so that the model's unity-gain
     # frequency is the measured one (a few passes; FP3 = 3.33*FP2)
     gbw, far = gbw40, False
     for _ in range(8):
-        if pm_model(1000 * gbw, gbw, a0, fout)[0] < pm:
+        if pm_model(1000 * gbw, gbw, a0, hout)[0] < pm:
             fp2, far = 1000 * gbw, True
         else:
             lo, hi = 0.05 * gbw, 1000 * gbw
             for _ in range(100):
                 m = math.sqrt(lo * hi)
-                if pm_model(m, gbw, a0, fout)[0] < pm:
+                if pm_model(m, gbw, a0, hout)[0] < pm:
                     lo = m
                 else:
                     hi = m
             fp2 = lo
-        gbw *= ac['fu'] / pm_model(fp2, gbw, a0, fout)[1]
+        gbw *= ac['fu'] / pm_model(fp2, gbw, a0, hout)[1]
     put('GBW', gbw, f"unity-gain frequency {sig(ac['fu'])} Hz with the phase margin (from 100*f(40 dB): {sig(gbw40)} Hz)")
     if abs(gbw / gbw40 - 1) > 0.05:
         notes.append(f"GBW: the gain at 40 dB gives {sig(gbw40)} Hz, {abs(gbw / gbw40 - 1) * 100:.0f} % off the value that matches the unity-gain frequency; the latter is used (the model's mid-band gain is then {abs(gbw / gbw40 - 1) * 100:.0f} % {'high' if gbw > gbw40 else 'low'}).")
@@ -457,14 +599,29 @@ def derive(ac, fast, slow, vxo=2e-3):
     kr = (rl + rout) / rl
     rli = rl * 10e3 / (rl + 10e3)
     ki = (rli + rout) / rli
-    srr = 0.35 * vstep / (fast['t85ri'] - fast['t50ri']) * ki
-    srf = 0.35 * vstep / (fast['t85fi'] - fast['t50fi']) * ki
+    srr_i = 0.35 * vstep / (fast['t85ri'] - fast['t50ri']) * ki
+    srf_i = 0.35 * vstep / (fast['t85fi'] - fast['t50fi']) * ki
+    if all(k in fast for k in ('tolr1', 'tolr2', 'tolf1', 'tolf2')):
+        # open loop, no load, overdrive VOD: the slope where the output crosses
+        # VCM (+-0.1*VSTEP). It is the internal slew rate; load and output current
+        # limit act on it in the model as in the part.
+        srr = 0.2 * vstep / (fast['tolr2'] - fast['tolr1'])
+        srf = 0.2 * vstep / (fast['tolf2'] - fast['tolf1'])
+        how = 'open loop, no load, overdrive VOD = 3*SRN/(2*pi*GBWN), slope at VCM +- 0.1*VSTEP'
+        for nm, a_, b_ in (('rising', srr, srr_i), ('falling', srf, srf_i)):
+            if abs(b_ / a_ - 1) > 0.15:
+                notes.append(f'SR: the inverter (50 -> 85 % of the step) gives {sig(b_)} V/s {nm}, the open loop {sig(a_)} V/s. '
+                             'The inverter edge is slowed by the output current limit or bends near the end; the open-loop value '
+                             'is used (the model limits the output current itself). Check the fitted model with the inverter.')
+    else:
+        srr, srf = srr_i, srf_i
+        how = f'inverter, step {vstep:g} V, 50 -> 85 % (deck older than rev 1.4)'
     if abs(srr - srf) / (srr + srf) * 2 < 0.1:
-        put('SR', 0.5 * (srr + srf), f'inverter, step {vstep:g} V: rising {sig(srr)}, falling {sig(srf)} V/s (50 -> 85 %)')
+        put('SR', 0.5 * (srr + srf), f'{how}: rising {sig(srr)}, falling {sig(srf)} V/s')
     else:
         put('SR', 0.5 * (srr + srf), 'mean of SRR and SRF')
-        put('SRR', srr, f'inverter, step {vstep:g} V, rising output, 50 -> 85 %')
-        put('SRF', srf, 'falling output, 50 -> 85 %')
+        put('SRR', srr, f'{how}, rising output')
+        put('SRF', srf, f'{how}, falling output')
     # follower jump: the follower's output TS/100 after each input edge, less what
     # slewing at the follower's own rate gives in that time (not with an input
     # clamp: its current drags the output). A slew rate that falls along the edge
@@ -484,17 +641,64 @@ def derive(ac, fast, slow, vxo=2e-3):
     os_f = (fast['ss_lo'] - fast['ss_min']) / (fast['ss_hi'] - fast['ss_lo']) * 100
     notes.append(f'Check: follower small-step overshoot {os_r:.1f} % rising, {os_f:.1f} % falling; the fitted model should give about the same.')
     # swing and output current
-    voh, vol = fast['voh_rl'], fast['vol_rl']
-    vhd = (vcc - voh) - (voh - vcm) / rl * rout
-    vld = (vol - vee) - (vcm - vol) / rl * rout
-    for k, v, w, nl in (('VHD', vhd, voh, vcc - fast['voh_nl']), ('VLD', vld, vol, fast['vol_nl'] - vee)):
-        if v <= 0:
-            notes.append(f'{k}: the loaded swing and ROUT give {v:.3f} V; 0.05 is used.')
-            v = 0.05
-        put(k, v, f'swing into RL {w:.3f} V, corrected by ROUT (unloaded headroom {nl:.3f} V)')
     put('ISRC', fast['isrc'], 'open loop, output shorted to VCM')
     put('ISNK', -fast['isnk'], 'open loop, output shorted to VCM')
-    for k, lim in (('ISRC', (vcc - P['VHD'] - vcm) / rout), ('ISNK', (vcm - vee - P['VLD']) / rout)):
+    voh, vol = fast['voh_rl'], fast['vol_rl']
+    if 'voh_r10' in fast:
+        # saturated headroom vs output current: RL, RL/10, RL/100. A line through
+        # the points of the working range (up to 20x the RL current and below 70 %
+        # of the current limit): VHD (VLD) is its intercept, RSATH (RSATL) its
+        # slope. Real stages bend (steeper at small currents, up near the limit);
+        # the line is right where loads are used. One point only: slope ROUT
+        # through it, RSAT not set.
+        for k, kr_, side, i0 in (('VHD', 'RSATH', 1, P['ISRC']), ('VLD', 'RSATL', -1, P['ISNK'])):
+            nl = fast['voh_nl'] if side > 0 else fast['vol_nl']
+            h0 = (vcc - nl) if side > 0 else (nl - vee)
+            pts = []
+            for tag, r_ in (('rl', rl), ('r10', rl / 10), ('r100', rl / 100)):
+                v = fast[('voh_' if side > 0 else 'vol_') + tag]
+                pts.append((side * (v - vcm) / r_, (vcc - v) if side > 0 else (v - vee)))
+            irl = pts[0][0]
+            use = [(i, h) for i, h in pts if 0 < i < 0.7 * i0 and i <= 20.001 * irl]
+            desc = ', '.join(f'{sig(h)} V at {sig(i)} A' for i, h in use)
+            if len(use) >= 2:
+                n = len(use)
+                mi, mh = sum(i for i, h in use) / n, sum(h for i, h in use) / n
+                rs = sum((i - mi) * (h - mh) for i, h in use) / sum((i - mi) ** 2 for i, h in use)
+                hv = mh - rs * mi
+                how = f'line through the saturated headroom {desc}; unloaded {sig(h0)} V'
+                if abs(hv - h0) > 0.1:
+                    notes.append(f'{k}: the line through the loaded points meets zero current at {sig(hv)} V; the unloaded '
+                                 f'headroom is {sig(h0)} V (the stage bends at small currents). The model is right in the '
+                                 'working range and off by the difference without load.')
+            elif use:
+                # one point: through it with slope ROUT (a line from the unloaded
+                # headroom would take the steep bend at small currents for a slope)
+                (i, h), = use
+                rs, hv = None, h - rout * i
+                how = f'{desc}, less ROUT*Iout (one point in the working range; unloaded {sig(h0)} V)'
+            else:
+                rs, hv, how = None, h0, 'unloaded headroom (no loaded point in the working range)'
+            if hv < 0:
+                hv = 0.0
+            put(k, hv, how)
+            if rs is None or rs <= 0:
+                if len(use) != 1:
+                    notes.append(f'{kr_}: no usable slope of the headroom with the load current; not set (= ROUT).')
+            elif abs(rs / rout - 1) > 0.15:
+                put(kr_, rs, f'slope of the saturated headroom with the output current (see {k})')
+            else:
+                src[k] += f'; slope {sig(rs)} ohm, within 15 % of ROUT: RSAT not set'
+    else:
+        vhd = (vcc - voh) - (voh - vcm) / rl * rout
+        vld = (vol - vee) - (vcm - vol) / rl * rout
+        for k, v, w, nl in (('VHD', vhd, voh, vcc - fast['voh_nl']), ('VLD', vld, vol, fast['vol_nl'] - vee)):
+            if v <= 0:
+                notes.append(f'{k}: the loaded swing and ROUT give {v:.3f} V; 0.05 is used.')
+                v = 0.05
+            put(k, v, f'swing into RL {w:.3f} V, corrected by ROUT (unloaded headroom {nl:.3f} V; deck older than rev 1.4)')
+    rsh, rsl = P.get('RSATH', rout), P.get('RSATL', rout)
+    for k, lim in (('ISRC', (vcc - P['VHD'] - vcm) / rsh), ('ISNK', (vcm - vee - P['VLD']) / rsl)):
         if abs(P[k] / lim - 1) < 0.05:
             notes.append(f'{k}: the short-circuit current {sig(P[k])} A equals the swing limit / ROUT; the current limit itself is higher and not seen. Take {k} from the datasheet (or keep the default).')
     # input clamp: V = N*VT*ln(I/IS) + R*I through two points
@@ -621,24 +825,24 @@ def derive(ac, fast, slow, vxo=2e-3):
 ORDER = ['A0', 'GBW', 'FP2', 'FP3', 'SR', 'SRR', 'SRF', 'KJUMP', 'VOS', 'IB', 'IOS', 'RID', 'CID', 'RIC', 'CIC',
          'VCLMP', 'RCLMP', 'CMRR', 'FCMRR', 'PSRRP', 'PSRRN', 'FPSRRP', 'FPSRRN', 'VCCN', 'VEEN', 'VCMN',
          'ICCQ', 'ICMHI', 'ICMLO', 'VK', 'PRHI', 'PRLO', 'VPRHI', 'VPRLO', 'IPR', 'VHD', 'VLD', 'ROUT',
-         'ROUTDC', 'ISRC', 'ISNK']
+         'ROUTDC', 'RSATH', 'RSATL', 'ISRC', 'ISNK', 'VXO', 'COUT', 'LOUT', 'RLOUT']
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('ac'), ap.add_argument('fast'), ap.add_argument('slow')
-    ap.add_argument('--vxo', default='2m', help='VXO of the fitted model (2m bipolar class AB, 0 CMOS rail-to-rail)')
+    ap.add_argument('--vxo', default=None, help='force VXO (default: from |Zout| at idle vs +-ILOAD; 2m if the log has no idle |Zout|)')
     ap.add_argument('--name', default='OPA')
     a = ap.parse_args()
     logs = [parse(open(f, errors='replace').read()) for f in (a.ac, a.fast, a.slow)]
-    P, src, notes = derive(*logs, vxo=num(a.vxo))
+    P, src, notes = derive(*logs, vxo=None if a.vxo is None else num(a.vxo))
     vals = ' '.join(f'{k}={sig(P[k])}' for k in ORDER if k in P)
-    print(f'X{a.name} inp inn vcc vee out OPAMP_FULL PARAMS: {vals} VXO={a.vxo}\n')
+    print(f'X{a.name} inp inn vcc vee out OPAMP_FULL PARAMS: {vals}\n')
     print(f"{'param':7s} {'value':>10s}  from")
     for k in ORDER:
         if k in P:
             print(f'{k:7s} {sig(P[k]):>10s}  {src[k]}')
-    print('\nNot measured (datasheet or defaults): ENOISE, FCEN, INOISE, FCIN, COUT, VXO, VCMT/VKT/DVOST/DIBT.')
+    print('\nNot measured (datasheet or defaults): ENOISE, FCEN, INOISE, FCIN, VCMT/VKT/DVOST/DIBT.')
     for n in notes:
         print('- ' + n)
 

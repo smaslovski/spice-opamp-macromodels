@@ -26,10 +26,12 @@ models well or at all: noise, temperature behaviour, and the fully differential
 
 ## Version and updates
 
-- Skill revision: **1.3** (2026-11-15)
-- For model version: **1.7** of `OPAMP_FULL` (the `Version` line in the header
-  of `opamp_full.lib`). For 1.6, give `CMRR`, `PSRRP` and `PSRRN` as magnitudes
-  (1.6 accepts no sign and chooses the signs itself). For 1.5.x, the values are
+- Skill revision: **1.4** (2026-11-16)
+- For model version: **1.7.1** of `OPAMP_FULL` (the `Version` line in the header
+  of `opamp_full.lib`). For 1.7, leave out `RSATH` and `RSATL` and use the
+  older swing rule (`VHD` from the swing into RL, corrected by ROUT). For 1.6,
+  give `CMRR`, `PSRRP` and `PSRRN` as magnitudes (1.6 accepts no sign and
+  chooses the signs itself). For 1.5.x, the values are
   the same as for 1.6, except that 1.5.x has no `ROUTDC` (leave it out and use
   the loaded gain for `A0`); there `FCMRR`, `FPSRRP` and `FPSRRN` of 0 mean
   scaled defaults, so always write them out (as this file does).
@@ -105,7 +107,7 @@ evaluates; leave the "derived" lines as they are.
 
 <!-- BEGIN header -->
 ```spice
-* <PART> characterization deck <AC|FAST|SLOW> (model-to-params skill rev 1.3)
+* <PART> characterization deck <AC|FAST|SLOW> (model-to-params skill rev 1.4)
 .include <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -118,6 +120,7 @@ XV inp inn vcc vee out <VENDOR_SUBCKT>
 * derived (do not edit)
 .param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
 .param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+.param VOD={max(0.5,min(5,3*SRN/(6.283*GBWN)))}
 ```
 <!-- END header -->
 
@@ -143,17 +146,19 @@ XV inp inn vcc vee out <VENDOR_SUBCKT>
 - `W`: the slow ramps start `W` inside each rail. It must exceed the distance
   from the rail to the end of the datasheet's input range by at least 1 V
   (bipolar ±15 V: 2–3; JFET: 4; rail-to-rail: 1), and stay below half the supply.
-- `ILOAD`: DC current drawn from the output while its impedance is measured:
-  1 mA, or about a tenth of the short-circuit current for a low-power part.
+- `ILOAD`: DC current drawn from (and, in a second copy, pushed into) the output
+  while its impedance is measured: 1 mA, or about a tenth of the smaller
+  short-circuit current for a low-power part.
 
 ## The circuits
 
 Each deck is a set of separate test circuits, each with its own copy of the
 part, all in one run. AC: open-loop gain and phase, common-mode and supply
 gains, output and input impedance. FAST (transient, about five times `TS`):
-offset, bias currents, supply current, slew rates in an inverter, follower jump,
-small-step overshoot, output swing and current limit, the reversed output after
-a step beyond each rail, input clamp. SLOW (transient, slow ramps near each
+offset, bias currents, supply current, slew rates (open loop, and in an
+inverter as a check), follower jump, small-step overshoot, output swing vs load
+current and current limit, the reversed output after a step beyond each rail,
+input clamp. SLOW (transient, slow ramps near each
 rail): input common-mode range and phase reversal.
 
 ### AC circuit
@@ -207,6 +212,20 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 9, 10: the same at idle (9) and at ILOAD sunk (10): with 5, the class-AB
+*    crossover (VXO) shows as a higher impedance at idle
+X9 mid n9 vcc vee o9 DUT
+Ed9 d9 0 o9 mid 1
+Rd9 d9 s9 1e18
+Cd9 s9 0 1
+E9 n9 mid s9 0 1
+I9 o9 mid DC 0 AC 1
+X10 mid n10 vcc vee o10 DUT
+Ed10 d10 0 o10 mid 1
+Rd10 d10 s10 1e18
+Cd10 s10 0 1
+E10 n10 mid s10 0 1
+I10 o10 mid DC {-ILOAD} AC 1
 * 8: open-loop differential gain without load (with 1: the DC output resistance)
 Va8 a8 mid AC 0.5
 X8 a8 n8 vcc vee o8 DUT
@@ -294,6 +313,18 @@ R9 c9 p9 100
 X9 p9 mid vcc vee o9 DUT
 R10 c9 p10 1k
 X10 p10 mid vcc vee o10 DUT
+* 11: open loop, no load, overdriven from -VOD to +VOD at TS and back at 3*TS
+*     (through 1 kohm, for input clamps): the slew rate where the output crosses
+*     VCM, independent of the load. VOD = 3*SRN/(2*pi*GBWN) saturates the input
+*     stage (0.5 to 5 V)
+Vd11 d11 mid PULSE({-VOD} {VOD} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+R11 d11 p11 1k
+X11 p11 mid vcc vee o11 DUT
+* 12, 13: as 4, into RL/10 (12) and RL/100 (13): saturation voltage vs current
+X12 d4 mid vcc vee o12 DUT
+R12 o12 mid {RL/10}
+X13 d4 mid vcc vee o13 DUT
+R13 o13 mid {RL/100}
 ```
 <!-- END circuit_fast -->
 
@@ -397,6 +428,30 @@ meas ac zo_dc find vm(o5) at=1m
 meas ac zo_a find vm(o5) at=$&fz1
 meas ac zo_b find vm(o5) at=$&fz2
 meas ac zo_c find vm(o5) at=$&gbwn
+meas ac zo_b0 find vm(o9) at=$&fz2
+meas ac zo_bn find vm(o10) at=$&fz2
+* complex Zout at idle above GBW, for LOUT, RLOUT and COUT
+let fh = gbwn*0.5
+meas ac zh0_re find vr(o9) at=$&fh
+meas ac zh0_im find vi(o9) at=$&fh
+let fh = gbwn*1
+meas ac zh1_re find vr(o9) at=$&fh
+meas ac zh1_im find vi(o9) at=$&fh
+let fh = gbwn*2
+meas ac zh2_re find vr(o9) at=$&fh
+meas ac zh2_im find vi(o9) at=$&fh
+let fh = gbwn*5
+meas ac zh3_re find vr(o9) at=$&fh
+meas ac zh3_im find vi(o9) at=$&fh
+let fh = gbwn*10
+meas ac zh4_re find vr(o9) at=$&fh
+meas ac zh4_im find vi(o9) at=$&fh
+let fh = gbwn*20
+meas ac zh5_re find vr(o9) at=$&fh
+meas ac zh5_im find vi(o9) at=$&fh
+let fh = gbwn*30
+meas ac zh6_re find vr(o9) at=$&fh
+meas ac zh6_im find vi(o9) at=$&fh
 meas ac zd_re0 find vr(p6) at=1m
 meas ac zd_im0 find vi(p6) at=1m
 meas ac zd_re find vr(p6) at=$&fz2
@@ -462,6 +517,16 @@ meas tran voh_nl avg v(o5) from=$&c to=$&d
 meas tran vol_nl avg v(o5) from=$&e to=$&f
 meas tran isrc avg i(v6) from=$&c to=$&d
 meas tran isnk avg i(v6) from=$&e to=$&f
+meas tran voh_r10 avg v(o12) from=$&c to=$&d
+meas tran vol_r10 avg v(o12) from=$&e to=$&f
+meas tran voh_r100 avg v(o13) from=$&c to=$&d
+meas tran vol_r100 avg v(o13) from=$&e to=$&f
+let l10lo = xvcm-0.1*vstep
+let l10hi = xvcm+0.1*vstep
+meas tran tolr1 when v(o11)=$&l10lo rise=1
+meas tran tolr2 when v(o11)=$&l10hi rise=1
+meas tran tolf1 when v(o11)=$&l10hi fall=1 td=$&tdf
+meas tran tolf2 when v(o11)=$&l10lo fall=1 td=$&tdf
 let l1 = xvcm-0.2*(xvcm-xvee)
 let l2 = xvcm-0.6*(xvcm-xvee)
 meas tran rt_t1 when v(o7)=$&l1 fall=1
@@ -591,6 +656,22 @@ AC:
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}
 .meas ac zo_c find mag(V(o5)) at={GBWN}
+.meas ac zo_b0 find mag(V(o9)) at={GBWN/10}
+.meas ac zo_bn find mag(V(o10)) at={GBWN/10}
+.meas ac zh0_re find re(V(o9)) at={GBWN*0.5}
+.meas ac zh0_im find im(V(o9)) at={GBWN*0.5}
+.meas ac zh1_re find re(V(o9)) at={GBWN*1}
+.meas ac zh1_im find im(V(o9)) at={GBWN*1}
+.meas ac zh2_re find re(V(o9)) at={GBWN*2}
+.meas ac zh2_im find im(V(o9)) at={GBWN*2}
+.meas ac zh3_re find re(V(o9)) at={GBWN*5}
+.meas ac zh3_im find im(V(o9)) at={GBWN*5}
+.meas ac zh4_re find re(V(o9)) at={GBWN*10}
+.meas ac zh4_im find im(V(o9)) at={GBWN*10}
+.meas ac zh5_re find re(V(o9)) at={GBWN*20}
+.meas ac zh5_im find im(V(o9)) at={GBWN*20}
+.meas ac zh6_re find re(V(o9)) at={GBWN*30}
+.meas ac zh6_im find im(V(o9)) at={GBWN*30}
 .meas ac zd_re0 find re(V(p6)) at=1m
 .meas ac zd_im0 find im(V(p6)) at=1m
 .meas ac zd_re find re(V(p6)) at={GBWN/10}
@@ -634,6 +715,14 @@ FAST:
 .meas tran vol_nl avg V(o5) from={4.5*TS} to={4.9*TS}
 .meas tran isrc avg I(V6) from={2*TS} to={2.4*TS}
 .meas tran isnk avg I(V6) from={4.5*TS} to={4.9*TS}
+.meas tran voh_r10 avg V(o12) from={2*TS} to={2.4*TS}
+.meas tran vol_r10 avg V(o12) from={4.5*TS} to={4.9*TS}
+.meas tran voh_r100 avg V(o13) from={2*TS} to={2.4*TS}
+.meas tran vol_r100 avg V(o13) from={4.5*TS} to={4.9*TS}
+.meas tran tolr1 when V(o11)={VCM-0.1*VSTEP} rise=1
+.meas tran tolr2 when V(o11)={VCM+0.1*VSTEP} rise=1
+.meas tran tolf1 when V(o11)={VCM+0.1*VSTEP} td={2*TS} fall=1
+.meas tran tolf2 when V(o11)={VCM-0.1*VSTEP} td={2*TS} fall=1
 .meas tran rt_t1 when V(o7)={VCM-0.2*(VCM-VEE)} fall=1
 .meas tran rt_t2 when V(o7)={VCM-0.6*(VCM-VEE)} fall=1
 .meas tran rt_end find V(o7) at={2.9*TS}
@@ -714,10 +803,11 @@ AC:
 <!-- BEGIN pspice_ac -->
 ```spice
 .OPTIONS NUMDGT=8 NOPAGE
-.AC DEC 10 1m 100G
+.AC DEC 20 1m 100G
 .PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
 .PRINT AC VP(o2) VP(o3) VP(o4)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
+.PRINT AC VM(o9) VM(o10) VR(o9) VI(o9)
 ```
 <!-- END pspice_ac -->
 
@@ -729,6 +819,7 @@ FAST:
 .PRINT TRAN V(o1,mid) I(Vp1) I(Vn1) I(Vcc1) V(o2) V(o2i) V(o3)
 .PRINT TRAN V(o4) V(o5) I(V6) V(o7) V(o8)
 .PRINT TRAN V(p9,mid) V(c9,p9) V(p10,mid) V(c9,p10)
+.PRINT TRAN V(o11) V(o12) V(o13)
 ```
 <!-- END pspice_fast -->
 
@@ -770,19 +861,56 @@ in the logs. Work in volts, amps, seconds, hertz.
 
 Constants: `VT = 0.025864` V (thermal voltage at 27 °C).
 
-### Choose VXO first
+### VXO and ROUT first
 
-`VXO` (class-AB crossover) is not measured. Keep `VXO=2m` (the default) for a
-bipolar class-AB output; use `VXO=0` for a CMOS rail-to-rail output (the swing
-reaches within about 50 mV of the rails) or when the user prefers. Then
-`REFF = 2*ROUT` if `VXO > 0`, else `REFF = ROUT` (with `VXO > 0` the model's
-small-signal output resistance is doubled at idle, which the gain test sees).
+`VXO` (class-AB crossover: the model doubles its small-signal `ROUT` at idle)
+follows from the output impedance at GBWN/10 at idle (`zo_b0`), with ILOAD
+sourced (`zo_b`) and with ILOAD sunk (`zo_bn`):
+
+- `zo_b0 / ((zo_b + zo_bn)/2) ≥ 1.4`: the vendor model's impedance rises at idle.
+  `VXO=2m`, `ROUT = (zo_b + zo_bn)/2`.
+- otherwise: `VXO=0`, `ROUT = zo_b0`.
+- If `zo_b` and `zo_bn` differ by more than 1.5×, the output resistance depends
+  on the output current: say so (the model has one ROUT).
+
+Then `REFF = 2*ROUT` if `VXO > 0`, else `REFF = ROUT` (the model's small-signal
+output resistance at idle, which the gain test sees). Older decks (rev < 1.4)
+have no `zo_b0`, `zo_bn`: keep `VXO=2m` for a bipolar class-AB output, `0` for a
+CMOS rail-to-rail output, and `ROUT = zo_b`.
+
+### Output network above GBW: LOUT, RLOUT, COUT
+
+Emitter and source followers driven from a resistive node look inductive: the
+open-loop |Zout| rises above GBW, peaks where the inductance meets the output
+capacitance, and falls. This sets the phase margin with capacitive loads. The
+model has `Zout = REFF + (s*LOUT || RLOUT)`, with `COUT` across the whole. The
+AC deck (rev 1.4) logs the complex Zout of the idle instance at GBWN × 0.5, 1,
+2, 5, 10, 20, 30 as `zh0_re`, `zh0_im` … `zh6_re`, `zh6_im`. The deck's source
+draws 1 A from the output, so **Zout = −(zhK_re + j·zhK_im)**.
+
+Fit, with `REFF` fixed, in ln|Z| and phase (radians), equal weights, three forms:
+`REFF || COUT` (C only), `REFF + s*LOUT` with `COUT`, and
+`REFF + (s*LOUT || RLOUT)` with `COUT`. `log_to_params.py` does this with a
+small simplex search.
+
+- If max|Z| ≤ 1.1·REFF: no rise, `LOUT` = 0; take `COUT` from the C-only fit.
+- Otherwise set `LOUT` and `COUT` from the L+C fit, or `LOUT`, `RLOUT` and
+  `COUT` from the three-element fit if its rms error is below 0.7 × that of the
+  L+C fit and `RLOUT < 30*REFF`.
+- An rms error above 15 %: say that the capacitive-load stability is approximate.
+- `COUT` only if it shows: `2*pi*f_max*COUT*max|Z| ≥ 0.05` with
+  `f_max = 30*GBWN`; else keep the default and say so.
+
+For orientation, the transistor-level references in `tests/transistor_level`
+give: bipolar and JFET-input parts with class-AB emitter followers 0.15–3.4 µH,
+RLOUT 36–430 Ω, COUT 6–12 pF; the CMOS common-source output no rise (LOUT = 0)
+and COUT 0.17 pF.
 
 ### AC deck
 
 | Param | Formula | Notes |
 |---|---|---|
-| `ROUT` | `zo_b` | open-loop output impedance at GBWN/10. If `zo_a` and `zo_c` differ from it by more than 2×, say so. |
+| `ROUT`, `VXO` | see "VXO and ROUT first" | open-loop output impedance at GBWN/10. If `zo_a` and `zo_c` differ from `zo_b` by more than 2×, say so. |
 | `ROUTDC` | `RL*(10^((a0u_db - a0_db)/20) - 1) - REFF` | the extra open-loop output resistance at DC, from the gain at 1 mHz without load (`a0u_db`) and with it (`a0_db`), both at idle. Set it only if it exceeds 0.1·`ROUT`; otherwise leave it out (0). Cross-check: `zo_dc - ROUT` (\|Zout\| at 1 mHz, at the DC load ILOAD); if the two differ by more than 30 %, the output resistance depends on the load current: say so and keep the idle value. (Model 1.6 and later; for 1.5.x leave it out and use the loaded gain for A0.) |
 | `A0` | `10^(a0_db/20) * (RL + REFF + ROUTDC)/RL` | `a0_db`: gain at 1 mHz, with the load; `A0` is the unloaded gain (`10^(a0u_db/20)` when `ROUTDC` is set). |
 | `FP2`, `FP3`, `GBW` | see below | from `fu` and `ph_fu` |
@@ -797,9 +925,11 @@ small-signal output resistance is doubled at idle, which the gain test sees).
 | `CID` | `Bd/(2*pi*f10) - CIC` | `Bd = -zd_im/(zd_re^2 + zd_im^2)`. A result below 1 fF (or negative) for CID or CIC: the vendor model has no input capacitance; keep the default or the datasheet value. |
 
 **Phase margin, GBW, FP2, FP3.** `PM = 180 + ph_fu` (degrees; bring it into
-−180…180). The output pole of the load: `f_out = 1/(2*pi*RP*3p)` with
-`RP = REFF*RL/(REFF + RL)`. Correct the margin for it:
-`PMc = PM + atan(fu/f_out)` (degrees; negligible unless `f_out < 30*fu`). Read
+−180…180). The output network delays the phase: with `w = 2*pi*fu`,
+`ZL = j*w*LOUT*RLOUT/(RLOUT + j*w*LOUT)` (`j*w*LOUT` without RLOUT, 0 without
+LOUT) and `ZLD = 1/(1/RL + j*w*COUT)` (`COUT` as found above, else 3p),
+`PMc = PM - arg(ZLD/(ZLD + REFF + ZL))` (degrees; arg is negative, so PMc > PM).
+Read
 `r = FP2/GBW` and `g = fu/GBW` from this table at `PMc`, interpolating linearly
 between columns (OPAMP_FULL, differential drive, FP3 = 3.33·FP2):
 
@@ -823,14 +953,30 @@ step response).
 | `IB` | `(ibp + ibn)/2` | currents into the pins (> 0 into the pin, as the model's IB) |
 | `IOS` | `ibp - ibn` | |
 | `ICCQ` | `iq` | unloaded follower at VCM |
-| `SRR` | `0.35*VSTEP/(t85ri - t50ri) * KI` | inverter, rising output; `KI = (RLI + ROUT)/RLI`, `RLI = RL*10k/(RL + 10k)` |
-| `SRF` | `0.35*VSTEP/(t85fi - t50fi) * KI` | falling output |
+| `SRR` | `0.2*VSTEP/(tolr2 - tolr1)` | open loop, no load, overdriven by ±VOD (VOD = 3·SRN/(2π·GBWN), 0.5…5 V): the rising slope where the output crosses VCM (as in S. Lozitsky's SR-vs-overdrive test). It is the internal slew rate; the model applies its own load and current limit. Check: the inverter `0.35*VSTEP/(t85ri - t50ri) * KI`, `KI = (RLI + ROUT)/RLI`, `RLI = RL*10k/(RL + 10k)`. If they differ by more than 15 %, say so: the inverter edge is slowed by the output current limit or bends near its end (older decks have only the inverter: use it). |
+| `SRF` | `0.2*VSTEP/(tolf2 - tolf1)` | falling output; check with `0.35*VSTEP/(t85fi - t50fi) * KI` |
 | `SR` | `(SRR + SRF)/2` | if SRR and SRF differ by less than 10 % of SR, give `SR` only; otherwise give all three |
 | `KJUMP` | see below | follower jump |
-| `VHD` | `(VCC - voh_rl) - (voh_rl - VCM)/RL * ROUT` | open-loop swing into RL. If ≤ 0: `0.05`, and say so. Compare with the unloaded `VCC - voh_nl`. |
-| `VLD` | `(vol_rl - VEE) - (VCM - vol_rl)/RL * ROUT` | likewise |
-| `ISRC` | `isrc` | output shorted to VCM. If it equals `(VCC - VHD - VCM)/ROUT` within 5 %, the current limit was not reached: take ISRC from the datasheet or keep the default. |
-| `ISNK` | `-isnk` | likewise with `(VCM - VEE - VLD)/ROUT` |
+| `VHD`, `RSATH` | see below | saturated headroom vs output current, top |
+| `VLD`, `RSATL` | see below | likewise, bottom |
+| `ISRC` | `isrc` | output shorted to VCM. If it equals `(VCC - VHD - VCM)/RSATH` within 5 % (`ROUT` if RSATH is not set), the current limit was not reached: take ISRC from the datasheet or keep the default. |
+| `ISNK` | `-isnk` | likewise with `(VCM - VEE - VLD)/RSATL` |
+
+**Swing vs load current (VHD, RSATH, VLD, RSATL).** The open-loop, overdriven
+output into RL, RL/10 and RL/100 gives the headroom `h = VCC - voh_x` (top) at
+the current `I = (voh_x - VCM)/R_x`; `voh_rl`, `voh_r10`, `voh_r100`. Use the
+points with `I` below 70 % of `ISRC` and at most 20× the RL current (the
+working range; near the limit the headroom bends up).
+- Two or more points: a least-squares line `h = VHD + RSATH*I`. If the
+  intercept differs from the unloaded headroom `VCC - voh_nl` by more than
+  0.1 V, say so (the stage bends at small currents; the model is right in the
+  working range).
+- One point: `VHD = h - ROUT*I`; no RSATH.
+- Give `RSATH` only if it differs from ROUT by more than 15 %; a negative
+  intercept becomes 0.
+- The bottom likewise, with `h = vol_x - VEE`, `I = (VCM - vol_x)/R_x`, `ISNK`.
+- Model 1.7 has no RSATH/RSATL: there use `VHD = (VCC - voh_rl) - (voh_rl - VCM)/RL * ROUT`
+  (if ≤ 0: `0.05`, and say so).
 | `VCLMP`, `RCLMP` | see below | input clamp |
 | `PRHI`, `PRLO` | see "SLOW deck" | slope of the reversed output |
 
@@ -922,8 +1068,7 @@ mid-supply, also `VCMN = VCM`.
 ### Not measured
 
 `ENOISE`, `FCEN`, `INOISE`, `FCIN` (noise: vendor models often have none or a
-rough one; take them from the datasheet with `datasheet-to-params`), `COUT`,
-`VXO`, and the rail-to-rail crossover `VCMT`, `VKT`, `DVOST`, `DIBT`. Keep their
+rough one; take them from the datasheet with `datasheet-to-params`), and the rail-to-rail crossover `VCMT`, `VKT`, `DVOST`, `DIBT`. Keep their
 defaults unless the datasheet gives them.
 
 ## Reading PSpice tables
@@ -940,7 +1085,10 @@ rows (for frequencies: linear in log f). The quantities named above are:
   has fallen 3/20 dB. PSRR+ with `VDB(o3)`, PSRR− with `VDB(o4)`. Signs: `cmrr_sg`
   = cos(`VP(o2)` − `VP(o1)`) in the first row (only its sign is used), `psrrp_sg`
   and `psrrn_sg` likewise with `VP(o3)` and `VP(o4)`. `zo_a/b/c` =
-  `VM(o5)` at GBWN/100, GBWN/10, GBWN; `zo_dc` = `VM(o5)` in the first row.
+  `VM(o5)` at GBWN/100, GBWN/10, GBWN; `zo_dc` = `VM(o5)` in the first row;
+  `zo_b0`, `zo_bn` = `VM(o9)`, `VM(o10)` at GBWN/10. `zhK_re`, `zhK_im` =
+  `VR(o9)`, `VI(o9)` at GBWN × 0.5, 1, 2, 5, 10, 20, 30 (K = 0…6), interpolated
+  linearly in log frequency.
   `zd_re0`, `zd_im0` = `VR(p6)`, `VI(p6)` in the first row, `zd_re`, `zd_im` at GBWN/10; `zc_*` likewise with `p7`.
 - FAST: averages over a window are the mean of the rows in it. `vos` =
   `V(o1,mid)`, `ibp` = `I(Vp1)`, `ibn` = `I(Vn1)`, `iq` = −`I(Vcc1)`, all over
@@ -956,7 +1104,11 @@ rows (for frequencies: linear in log f). The quantities named above are:
   VCM − 0.2·(VCM − VEE) and VCM − 0.6·(VCM − VEE); `rb_t1`, `rb_t2`: where `V(o8)`
   rises through VCM + 0.2·(VCC − VCM) and VCM + 0.6·(VCC − VCM). `vcl1` =
   `V(p9,mid)`, `icl1` = `V(c9,p9)`/100; `vcl2` = `V(p10,mid)`, `icl2` =
-  `V(c9,p10)`/1000 (over 0.5…0.9·TS).
+  `V(c9,p10)`/1000 (over 0.5…0.9·TS). `voh_r10`, `vol_r10`, `voh_r100`,
+  `vol_r100`: `V(o12)`, `V(o13)` over the windows of `voh_rl`, `vol_rl`. `tolr1`,
+  `tolr2`: where `V(o11)` first rises through VCM − 0.1·VSTEP and VCM + 0.1·VSTEP;
+  `tolf1`, `tolf2`: where it falls (after 2·TS) through VCM + 0.1·VSTEP and
+  VCM − 0.1·VSTEP.
 - SLOW: `dm` = `V(pam,nam) - V(pbm,nbm)` (its mean is `dmid`), `dt` =
   `V(pat,nat) - V(pbt,nbt)`, `db` = `V(pab,nab) - V(pbb,nbb)`. `vw5t`/`vwqt`: `V(int)`
   where `dt` rises through 2·`dmid` / 4·`dmid`; `vw5b`/`vwqb` likewise with `db`

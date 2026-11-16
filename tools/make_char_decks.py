@@ -21,7 +21,7 @@ import os, re
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SKILL = os.path.join(ROOT, 'skills', 'model-to-params')
-REV = '1.3'
+REV = '1.4'
 
 HEADER = """\
 * {part} characterization deck {kind} (model-to-params skill rev {rev})
@@ -37,6 +37,7 @@ HEADER = """\
 * derived (do not edit)
 .param TS={{4*VSTEP/SRN+5/GBWN}} TR={{(W+OVR)*1e4/SRN+1e4/GBWN}}
 .param VSH={{min(1,0.2*(VCC-VEE))}} VCL={{min(1.5,0.9*(VCC-VCM))}}
+.param VOD={{max(0.5,min(5,3*SRN/(6.283*GBWN)))}}
 """
 
 # ---- circuits (identical in all simulators) ---------------------------------
@@ -88,6 +89,20 @@ Rd5 d5 s5 1e18
 Cd5 s5 0 1
 E5 n5 mid s5 0 1
 I5 o5 mid DC {ILOAD} AC 1
+* 9, 10: the same at idle (9) and at ILOAD sunk (10): with 5, the class-AB
+*    crossover (VXO) shows as a higher impedance at idle
+X9 mid n9 vcc vee o9 DUT
+Ed9 d9 0 o9 mid 1
+Rd9 d9 s9 1e18
+Cd9 s9 0 1
+E9 n9 mid s9 0 1
+I9 o9 mid DC 0 AC 1
+X10 mid n10 vcc vee o10 DUT
+Ed10 d10 0 o10 mid 1
+Rd10 d10 s10 1e18
+Cd10 s10 0 1
+E10 n10 mid s10 0 1
+I10 o10 mid DC {-ILOAD} AC 1
 * 8: open-loop differential gain without load (with 1: the DC output resistance)
 Va8 a8 mid AC 0.5
 X8 a8 n8 vcc vee o8 DUT
@@ -171,6 +186,18 @@ R9 c9 p9 100
 X9 p9 mid vcc vee o9 DUT
 R10 c9 p10 1k
 X10 p10 mid vcc vee o10 DUT
+* 11: open loop, no load, overdriven from -VOD to +VOD at TS and back at 3*TS
+*     (through 1 kohm, for input clamps): the slew rate where the output crosses
+*     VCM, independent of the load. VOD = 3*SRN/(2*pi*GBWN) saturates the input
+*     stage (0.5 to 5 V)
+Vd11 d11 mid PULSE({-VOD} {VOD} {TS} {TS/1000} {TS/1000} {2*TS} {10*TS})
+R11 d11 p11 1k
+X11 p11 mid vcc vee o11 DUT
+* 12, 13: as 4, into RL/10 (12) and RL/100 (13): saturation voltage vs current
+X12 d4 mid vcc vee o12 DUT
+R12 o12 mid {RL/10}
+X13 d4 mid vcc vee o13 DUT
+R13 o13 mid {RL/100}
 """
 
 SLOW = """\
@@ -263,6 +290,30 @@ meas ac zo_dc find vm(o5) at=1m
 meas ac zo_a find vm(o5) at=$&fz1
 meas ac zo_b find vm(o5) at=$&fz2
 meas ac zo_c find vm(o5) at=$&gbwn
+meas ac zo_b0 find vm(o9) at=$&fz2
+meas ac zo_bn find vm(o10) at=$&fz2
+* complex Zout at idle above GBW, for LOUT, RLOUT and COUT
+let fh = gbwn*0.5
+meas ac zh0_re find vr(o9) at=$&fh
+meas ac zh0_im find vi(o9) at=$&fh
+let fh = gbwn*1
+meas ac zh1_re find vr(o9) at=$&fh
+meas ac zh1_im find vi(o9) at=$&fh
+let fh = gbwn*2
+meas ac zh2_re find vr(o9) at=$&fh
+meas ac zh2_im find vi(o9) at=$&fh
+let fh = gbwn*5
+meas ac zh3_re find vr(o9) at=$&fh
+meas ac zh3_im find vi(o9) at=$&fh
+let fh = gbwn*10
+meas ac zh4_re find vr(o9) at=$&fh
+meas ac zh4_im find vi(o9) at=$&fh
+let fh = gbwn*20
+meas ac zh5_re find vr(o9) at=$&fh
+meas ac zh5_im find vi(o9) at=$&fh
+let fh = gbwn*30
+meas ac zh6_re find vr(o9) at=$&fh
+meas ac zh6_im find vi(o9) at=$&fh
 meas ac zd_re0 find vr(p6) at=1m
 meas ac zd_im0 find vi(p6) at=1m
 meas ac zd_re find vr(p6) at=$&fz2
@@ -325,6 +376,16 @@ meas tran voh_nl avg v(o5) from=$&c to=$&d
 meas tran vol_nl avg v(o5) from=$&e to=$&f
 meas tran isrc avg i(v6) from=$&c to=$&d
 meas tran isnk avg i(v6) from=$&e to=$&f
+meas tran voh_r10 avg v(o12) from=$&c to=$&d
+meas tran vol_r10 avg v(o12) from=$&e to=$&f
+meas tran voh_r100 avg v(o13) from=$&c to=$&d
+meas tran vol_r100 avg v(o13) from=$&e to=$&f
+let l10lo = xvcm-0.1*vstep
+let l10hi = xvcm+0.1*vstep
+meas tran tolr1 when v(o11)=$&l10lo rise=1
+meas tran tolr2 when v(o11)=$&l10hi rise=1
+meas tran tolf1 when v(o11)=$&l10hi fall=1 td=$&tdf
+meas tran tolf2 when v(o11)=$&l10lo fall=1 td=$&tdf
 let l1 = xvcm-0.2*(xvcm-xvee)
 let l2 = xvcm-0.6*(xvcm-xvee)
 meas tran rt_t1 when v(o7)=$&l1 fall=1
@@ -447,6 +508,22 @@ LT_AC = """\
 .meas ac zo_a find mag(V(o5)) at={GBWN/100}
 .meas ac zo_b find mag(V(o5)) at={GBWN/10}
 .meas ac zo_c find mag(V(o5)) at={GBWN}
+.meas ac zo_b0 find mag(V(o9)) at={GBWN/10}
+.meas ac zo_bn find mag(V(o10)) at={GBWN/10}
+.meas ac zh0_re find re(V(o9)) at={GBWN*0.5}
+.meas ac zh0_im find im(V(o9)) at={GBWN*0.5}
+.meas ac zh1_re find re(V(o9)) at={GBWN*1}
+.meas ac zh1_im find im(V(o9)) at={GBWN*1}
+.meas ac zh2_re find re(V(o9)) at={GBWN*2}
+.meas ac zh2_im find im(V(o9)) at={GBWN*2}
+.meas ac zh3_re find re(V(o9)) at={GBWN*5}
+.meas ac zh3_im find im(V(o9)) at={GBWN*5}
+.meas ac zh4_re find re(V(o9)) at={GBWN*10}
+.meas ac zh4_im find im(V(o9)) at={GBWN*10}
+.meas ac zh5_re find re(V(o9)) at={GBWN*20}
+.meas ac zh5_im find im(V(o9)) at={GBWN*20}
+.meas ac zh6_re find re(V(o9)) at={GBWN*30}
+.meas ac zh6_im find im(V(o9)) at={GBWN*30}
 .meas ac zd_re0 find re(V(p6)) at=1m
 .meas ac zd_im0 find im(V(p6)) at=1m
 .meas ac zd_re find re(V(p6)) at={GBWN/10}
@@ -487,6 +564,14 @@ LT_FAST = """\
 .meas tran vol_nl avg V(o5) from={4.5*TS} to={4.9*TS}
 .meas tran isrc avg I(V6) from={2*TS} to={2.4*TS}
 .meas tran isnk avg I(V6) from={4.5*TS} to={4.9*TS}
+.meas tran voh_r10 avg V(o12) from={2*TS} to={2.4*TS}
+.meas tran vol_r10 avg V(o12) from={4.5*TS} to={4.9*TS}
+.meas tran voh_r100 avg V(o13) from={2*TS} to={2.4*TS}
+.meas tran vol_r100 avg V(o13) from={4.5*TS} to={4.9*TS}
+.meas tran tolr1 when V(o11)={VCM-0.1*VSTEP} rise=1
+.meas tran tolr2 when V(o11)={VCM+0.1*VSTEP} rise=1
+.meas tran tolf1 when V(o11)={VCM+0.1*VSTEP} td={2*TS} fall=1
+.meas tran tolf2 when V(o11)={VCM-0.1*VSTEP} td={2*TS} fall=1
 .meas tran rt_t1 when V(o7)={VCM-0.2*(VCM-VEE)} fall=1
 .meas tran rt_t2 when V(o7)={VCM-0.6*(VCM-VEE)} fall=1
 .meas tran rt_end find V(o7) at={2.9*TS}
@@ -555,10 +640,11 @@ LT_SLOW = """\
 # PSpice: no .meas in the netlist; the tables in the .out file are read instead.
 PS_AC = """\
 .OPTIONS NUMDGT=8 NOPAGE
-.AC DEC 10 1m 100G
+.AC DEC 20 1m 100G
 .PRINT AC VDB(o1) VP(o1) VDB(o2) VDB(o3) VDB(o4) VDB(o8)
 .PRINT AC VP(o2) VP(o3) VP(o4)
 .PRINT AC VM(o5) VR(p6) VI(p6) VR(p7) VI(p7)
+.PRINT AC VM(o9) VM(o10) VR(o9) VI(o9)
 """
 
 PS_FAST = """\
@@ -567,6 +653,7 @@ PS_FAST = """\
 .PRINT TRAN V(o1,mid) I(Vp1) I(Vn1) I(Vcc1) V(o2) V(o2i) V(o3)
 .PRINT TRAN V(o4) V(o5) I(V6) V(o7) V(o8)
 .PRINT TRAN V(p9,mid) V(c9,p9) V(p10,mid) V(c9,p10)
+.PRINT TRAN V(o11) V(o12) V(o13)
 """
 
 PS_SLOW = """\

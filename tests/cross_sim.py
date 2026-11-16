@@ -69,6 +69,20 @@ CASES = {
     'ac_signed': ('opamp_full.lib', "Vcc vcc 0 DC 15 AC 1\nVee vee 0 -15\n"
                   "X1 0 out vcc vee out OPAMP_FULL PARAMS: CMRR=-10k FCMRR=1k PSRR=31.6k FPSRR=100 PSRRN=0\n",
                   ".ac dec 20 10 10Meg", [('pss1k', 'ac', 'V(out)@1k', 1e-3), ('pss100k', 'ac', 'V(out)@100k', 1e-3)]),
+    # saturation resistance (model 1.7.1): open loop, overdriven, 10 mA load each way
+    # (one instance: the PSpice demo allows 64 nodes; the 1G load keeps LTspice from
+    # calling an output driven only by current sources floating)
+    'dc_rsat': ('opamp_full.lib', SUP15 + "Vp p 0 0.5\nX1 p 0 vcc vee o1 OPAMP_FULL PARAMS: ROUT=50 RSATH=100 RSATL=10 "
+                "VHD=1 VLD=1 VXO=0\nI1 o1 vee DC 0\nRb o1 0 1G\n",
+                ".dc I1 0 10m 5m", [('vh', 'dc', 'V(o1)@10m', 1e-4)]),
+    # output inductance (model 1.7.1): follower Zout above GBW, and the ringing with 1 nF
+    'ac_lout': ('opamp_full.lib', SUP15 + "X1 0 out vcc vee out OPAMP_FULL PARAMS: ROUT=33 VXO=0 LOUT=1u RLOUT=40 COUT=12p\n"
+                "Iz 0 out DC 0 AC 1\n", ".ac dec 20 1k 1G",
+                [('zl10m', 'ac', 'V(out)@10Meg', 1e-3), ('zl100m', 'ac', 'V(out)@100Meg', 1e-3)]),
+    'tran_lout': ('opamp_full.lib', SUP15 + "Vin in 0 PULSE(0 0.1 1u 10n 10n 20u 40u)\n"
+                  "X1 in out vcc vee out OPAMP_FULL PARAMS: GBW=1.8Meg ROUT=33 VXO=0 LOUT=1u RLOUT=40 COUT=12p\n"
+                  "RL out 0 10k\nCL out 0 1n\n", ".tran 5n 6u",
+                  [('vl1', 'tran', 'V(out)@1.3u', 2e-3), ('vl2', 'tran', 'V(out)@1.6u', 2e-3)]),
     'ac_float': ('opamp_full.lib', "Vfl c 0 DC 0 AC 1\nVsp vcc c 15\nVsn c vee 15\nVin in c DC 0 AC 1\n"
                  "X1 in out vcc vee out OPAMP_FULL\nRL out c 2k\n", ".ac dec 20 10 10Meg",
                  [('fl1k', 'ac', 'V(out)@1k', 1e-3), ('fl1m', 'ac', 'V(out)@1Meg', 1e-3)]),
@@ -244,6 +258,14 @@ def ps_deck(name):
     return '\r\n'.join(L) + '\r\n', cols
 
 
+def spice_num(t):
+    """A SPICE number with an optional scale suffix (f p n u m k meg g t)."""
+    m = re.match(r'([-+0-9.eE]+?)(meg|[fpnumkgt])?$', t.strip().lower())
+    scale = {None: 1, 'f': 1e-15, 'p': 1e-12, 'n': 1e-9, 'u': 1e-6, 'm': 1e-3, 'k': 1e3,
+             'meg': 1e6, 'g': 1e9, 't': 1e12}
+    return float(m.group(1)) * scale[m.group(2)]
+
+
 def run_ps(name, exe):
     import numpy as np
     txt, cols = ps_deck(name)
@@ -288,7 +310,7 @@ def run_ps(name, exe):
             res[m] = float(x[i] + (float(lvl) - y[i]) * (x[i + 1] - x[i]) / (y[i + 1] - y[i]))
         else:
             v, at = split(e)
-            at = float(at.lower().replace('meg', 'e6').replace('k', 'e3').replace('u', 'e-6'))
+            at = spice_num(at)
             c = ps_name(v)
             if k == 'ac':
                 c = 'VDB' + c[1:]

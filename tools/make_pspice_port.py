@@ -195,6 +195,22 @@ def convert(name, inline):
             n_odc += 1
     if n_odc != (2 if 'FDOPAMP' in name.upper() else 1):
         sys.exit(f'{name}: ROUTDC rescaling failed ({n_odc})')
+    # the clamp levels of OPAMP_FULL move with the command current (RSATH/RSATL)
+    n_hl = 0
+    for k, ln in enumerate(lines):
+        if ln is not None and re.match(r'^E(hi|lo) ', ln) and 'V(nicmd)' in ln:
+            lines[k] = ln.replace('V(nicmd)', '1e-3*V(nicmd)')
+            n_hl += 1
+    if n_hl != (0 if 'FDOPAMP' in name.upper() else 2):
+        sys.exit(f'{name}: clamp-level rescaling failed ({n_hl})')
+    # the output-inductance source of OPAMP_FULL (LOUT) reads the command current too
+    n_ld = 0
+    for k, ln in enumerate(lines):
+        if ln is not None and re.match(r'^Gld +0 +nld +nicmd +0 +1$', ln.strip()):
+            lines[k] = ln.replace('nicmd 0 1', 'nicmd 0 1e-3')
+            n_ld += 1
+    if n_ld != (0 if 'FDOPAMP' in name.upper() else 1):
+        sys.exit(f'{name}: LOUT rescaling failed ({n_ld})')
     txt = '\n'.join(l for l in lines if l is not None)
     # PSpice: every node needs two connections; a node read only inside VALUE={}
     # has one. The 1e15 ohm partners change the 1 kohm noise by ~1e-12.

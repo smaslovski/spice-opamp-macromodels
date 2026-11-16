@@ -18,9 +18,13 @@ derived, and which stay at their defaults.
 
 ## Version and updates
 
-- Skill revision: **1.19** (2026-11-15)
-- For model version: **1.7** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
+- Skill revision: **1.20** (2026-11-16)
+- For model version: **1.7.1** of `OPAMP_FULL` / `FDOPAMP_FULL` (the `Version` line
   in the header of `opamp_full.lib` / `fdopamp_full.lib`)
+- Model 1.7.1: `RSATH`, `RSATL` (OPAMP_FULL only): the slope of the saturated
+  output headroom with the load current, when it differs from ROUT (see the
+  `VHD` row). For a 1.7 library leave them out and use the swing rule without
+  them.
 - Model 1.7: `CMRR`, `PSRR`, `PSRRP`, `PSRRN` are signed (see their rows); enter
   datasheet values as positive. The defaults are `CMRR` = −31.6k, `PSRR` = 31.6k
   (FDA: 31.6k, 10k). For a 1.6 library the same positive values work; if you
@@ -219,7 +223,8 @@ as a cross-check of a GBW read from a plot.
 | `VCMT`, `VKT` | V | rail-to-rail input crossover: position of the transition between the input pairs (distance below vcc) and its width | 1, 0.1 / 1, 0.1 | From the V_OS vs V_CM plot of a rail-to-rail input part: VCMT = V_CC − (V_CM at the middle of the step); VKT = (10 %–90 % width of the step) / 2.2. Needed only with `DVOST` or `DIBT`. |
 | `DVOST` | V | offset change across the transition; `VOS` applies below it | 0 / 0 | From the same plot (typical curve): V_OS above the transition minus V_OS below it. `VOS` is then the value below the transition, where it is usually specified (e.g. V_CM = V_S/2). |
 | `DIBT` | A | bias-current change across the transition, each pin | 0 / 0 | From an I_B vs V_CM plot: I_B above the transition minus I_B below it (bipolar rail-to-rail inputs often change sign). |
-| `VHD`, `VLD` | V | minimum headroom between the output and vcc / vee (no load) | 2, 2 / 1.2, 1.2 | From "output voltage swing" at load RL: VHD = (V_CC − V_OH) − (V_OH/RL)·ROUT, VLD = (V_OL − V_EE) − (|V_OL|/RL)·ROUT (V_OH, V_OL measured from ground, RL to ground). Use a typical swing (with several loads, the lightest load) in preference to a min spec at the chosen load; a min-only swing gives a pessimistic VHD, so say so. For a single supply, RL usually goes to V_S/2: use that voltage instead of ground. If the result is ≤ 0, the swing spec and ROUT disagree (often because r_o is a high-frequency value): take the swing from a plot, or set 0.05, say so, and state the swing the model will then give, (V_CC − VHD)·RL/(RL + ROUT). |
+| `VHD`, `VLD` | V | minimum headroom between the output and vcc / vee (no load) | 2, 2 / 1.2, 1.2 | From "output voltage swing" at load RL: VHD = (V_CC − V_OH) − (V_OH/RL)·ROUT, VLD = (V_OL − V_EE) − (|V_OL|/RL)·ROUT (V_OH, V_OL measured from ground, RL to ground). Use a typical swing (with several loads, the lightest load) in preference to a min spec at the chosen load; a min-only swing gives a pessimistic VHD, so say so. For a single supply, RL usually goes to V_S/2: use that voltage instead of ground. If the result is ≤ 0, the swing spec and ROUT disagree (often because r_o is a high-frequency value): use `RSATH`/`RSATL` (next row) if the datasheet has swing at two loads or a swing-vs-current plot; otherwise set 0.05, say so, and state the swing the model will then give, (V_CC − VHD)·RL/(RL + ROUT). |
+| `RSATH`, `RSATL` | Ω | saturation resistance: with the output saturated, headroom = VHD + RSATH·I_source (top), VLD + RSATL·I_sink (bottom); 0 = ROUT | 0, 0 / – | OPAMP_FULL only. From an "output voltage swing vs output current" plot (often one curve per rail, as V_CC − V_OH and V_OL − V_EE): read the headroom at two currents in the range the user will load the part (e.g. 1 mA and 10 mA, below half the short-circuit current); RSATH = Δheadroom/ΔI, and then VHD = headroom − RSATH·I (the line's intercept; a real stage bends at small currents, so it may differ from the swing without load). Or from the swing at two loads R₁, R₂ in the table: I = V_OH/R. Give them only if they differ from ROUT by more than 15 %; otherwise use the VHD rule above. CMOS rail-to-rail stages typically saturate with a far smaller slope than their small-signal r_o, bipolar ones often with a larger one. |
 
 ### Output stage (per output for the FDA)
 
@@ -227,7 +232,8 @@ as a cross-check of a GBW read from a plot.
 |---|---|---|---|---|
 | `ROUTDC` | Ω | additional open-loop output resistance at DC (falls away above f_d = GBW/A0) | 0 / 0 | Only if the datasheet supports it: A_OL at two loads R₁, R₂ (common for CMOS parts) gives R = ROUT + ROUTDC from A₁/A₂ = R₁(R₂ + R)/(R₂(R₁ + R)) (A₁ at R₁, A₂ at R₂), i.e. R = R₁R₂(A₂ − A₁)/(A₁R₂ − A₂R₁) with linear gains; or an open-loop Z_out plot that rises toward DC (ROUTDC = Z_out at low frequency − ROUT). Otherwise leave 0 (model 1.6 and later; not in older libraries). |
 | `ROUT` | Ω | open-loop output resistance | 75 / 10 | "Open-loop output impedance/resistance" (r_o, Z_O), or the flat part of the open-loop Z_out plot. **Not** the closed-loop output impedance. Use r_o directly. (With `VXO` > 0 the model doubles the small-signal ROUT at idle; that is a model feature, not a reason to halve r_o.) |
-| `COUT` | F | output capacitance (half to each rail) | 3p / 1p | Rarely given: keep the default. |
+| `COUT` | F | output capacitance (half to each rail) | 3p / 1p | Rarely given: keep the default, unless an open-loop Z_out plot shows the peak (see `LOUT`). |
+| `LOUT`, `RLOUT` | H, Ω | output inductance in series with `ROUT`, and a resistance across it (Zout levels off at `ROUT` + `RLOUT`); 0 = none (`OPAMP_FULL` only) | 0, 0 / – | Only from an open-loop Z_out plot that rises above the flat `ROUT` part: `LOUT` = √(\|Z\|² − `ROUT`²)/(2πf) at a point f on the rise, well below the peak. If the curve levels off or peaks at Z_pk, `RLOUT` ≈ Z_pk − `ROUT`, and `COUT` ≈ 1/((2π f_pk)²·`LOUT`) from the peak frequency f_pk. Otherwise leave 0: most datasheets show only the closed-loop Z_out. |
 | `ISRC`, `ISNK` | A | maximum source / sink current | 25m / 50m | "Short-circuit output current" (I_SC, I_OS), source and sink separately if given. |
 | `VXO` | V | class-AB crossover: below about VXO/ROUT the small-signal output resistance is 2·ROUT; 0 disables | 2m / 0 | Keep 2m for bipolar class-AB parts with a visible crossover; 0 for CMOS rail-to-rail outputs and FDAs. |
 

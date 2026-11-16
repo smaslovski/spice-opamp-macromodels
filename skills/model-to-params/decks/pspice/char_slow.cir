@@ -1,4 +1,4 @@
-* <PART> characterization deck SLOW (model-to-params skill rev 1.3)
+* <PART> characterization deck SLOW (model-to-params skill rev 1.4)
 .LIB <vendor model file>
 * the part, with the pins in the order inp inn vcc vee out
 .subckt DUT inp inn vcc vee out
@@ -11,6 +11,7 @@ XV inp inn vcc vee out <VENDOR_SUBCKT>
 * derived (do not edit)
 .param TS={4*VSTEP/SRN+5/GBWN} TR={(W+OVR)*1e4/SRN+1e4/GBWN}
 .param VSH={min(1,0.2*(VCC-VEE))} VCL={min(1.5,0.9*(VCC-VCM))}
+.param VOD={max(0.5,min(5,3*SRN/(6.283*GBWN)))}
 
 Vcc vcc 0 {VCC}
 Vee vee 0 {VEE}

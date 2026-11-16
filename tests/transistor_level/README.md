@@ -278,6 +278,48 @@ and the same mismatch changes it by less than 3 %. This is why the model takes s
 DC values but sets the slope signs itself, and why `KREF` follows the architecture
 (about 1 for A, 0 for B, C and D).
 
+**Output stage and slew rate** (model 1.7.1; the test benches of S. Lozitsky,
+Sovremennaya Elektronika 2006). Driven open loop into saturation with a load
+current, the references' headroom grows with the current at a slope unlike their
+small-signal `ROUT`: C (CMOS) sinks 6.3 mA with 0.71 V of headroom, where a slope
+of `ROUT` = 1.1 kΩ gave 7.3 V; D sources with about 90 Ω against `ROUT` = 53 Ω.
+`RSATH`/`RSATL`, fitted by the skill from the swing into RL, RL/10 and RL/100, give
+0.62 V for C. At 10 and 20 mA, B's sourcing headroom is now 1.09 and 1.41 V (reference
+1.10 and 1.39 V; without load 0.77 against 0.42 V, as the stage bends at small
+currents), D's sinking 2.22 and 2.58 V (2.23 and 2.56 V). The output impedance
+at idle equals that at ±1 mA in A, B and C, and is 1.7× higher in D (crossover):
+the skill now sets `VXO` from that ratio (0 for A, B, C; 2m for D), where the fixed
+`VXO=2m` had doubled A's and B's idle impedance. Measured open loop at the
+crossing of VCM, C's slew rate is 6.6 V/µs up and 6.8 down; in the inverter it
+slows to 2.5 V/µs near the end of the rising edge, where C's output current nears
+its 0.1 mA source limit (a limit that falls with the output voltage, which the
+model does not reproduce). The skill now takes the open-loop slew rate.
+With the idle impedance right, A, B and D show that their open-loop output
+impedance rises above GBW and peaks (A: 33 → 61 Ω at 10 MHz, 68 Ω at 30 MHz;
+B: 21 → 66 Ω at 100 MHz; D: 92 → 442 Ω at 30 MHz) with a phase of up to +47°:
+the emitter followers, driven from a resistive node, look like an inductance with
+a resistor across it. Without it the fitted models gave 47.8° and 54.4° of phase
+margin with 1 nF of load (references 39.6° and 45.8°). The skill now fits
+`LOUT`, `RLOUT` and `COUT` to the complex Zout at idle between 0.5 and 30 × GBW
+(A: 0.96 µH, 36 Ω, 12 pF; B: 0.15 µH, 46 Ω, 9.1 pF; D: 3.35 µH, 428 Ω, 6.1 pF;
+C, a common-source output, shows no rise: `COUT` 0.17 pF). The phase margins
+open / with 10 pF / 100 pF / 1 nF (follower loop, RL as above) are then:
+
+| | reference | fitted |
+|---|---|---|
+| A | 65.2 / 65.0 / 61.7 / 39.6° | 66.6 / 66.4 / 63.0 / 41.5° |
+| B | 82.2 / 81.9 / 78.3 / 45.8° | 82.3 / 81.9 / 78.3 / 49.1° |
+| C | 76.4 / 46.8 / 16.7 / 6.5° | 75.6 / 46.0 / 16.3 / 5.8° |
+| D | 82.4 / 82.1 / 79.8 / 58.9° | 82.4 / 82.1 / 79.2 / 53.2° |
+
+and the overshoot of a follower step into 1 nF is 13.4 % for A (reference
+13.8 %) and 19.9 % for B (21.2 %), against 10.6 % and 12.9 % without `LOUT`.
+D's margin at 1 nF comes out lower than the reference, as the model's idle
+impedance below GBW is 2·`ROUT` = 111 Ω against 92 Ω (one `ROUT` for both the
+crossover and the loaded stage); its large-step overshoot into 1 nF stays below
+the reference (0.2 against 4.5 %). C's overshoots with 10–300 pF are lower than
+the reference's (15 against 20.5 % at 10 pF, 68 against 79 % at 100 pF).
+
 **Substrates.** In the deck of the book the transistors have three terminals, so
 SPICE connects their substrate capacitances (`CJS` = 3 pF) to node 0, circuit
 ground. That forward-biases the isolation junction of every transistor whose

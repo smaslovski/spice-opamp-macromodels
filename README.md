@@ -34,7 +34,7 @@ overload and saturation behaviour.
 - finite DC gain `A0`, dominant pole set by `GBW`, two non-dominant poles `FP2`, `FP3`
 - differential and common-mode input resistance and capacitance (`RID`, `CID`, `RIC`, `CIC`)
 - CMRR, PSRR (both supplies), PSRR+ and PSRR− with a 20 dB/decade roll-off above `FCMRR` / `FPSRR` (optionally separate corners `FPSRRP`, `FPSRRN` for the two supplies), kept consistent with a part that has no ground pin (see below)
-- output resistance `ROUT` and output capacitance `COUT`
+- output resistance `ROUT`, output capacitance `COUT`, and an output inductance `LOUT` (with `RLOUT` across it) for the rise of the open-loop output impedance above GBW, which sets the stability with capacitive loads
 - FDA: an internal common-mode feedback loop with its own DC gain, unity-gain frequency, second pole and slew rate; the `vocm` pin sets the output common-mode voltage and floats to mid-supply when left open
 
 **Noise**
@@ -50,7 +50,7 @@ overload and saturation behaviour.
 - optional rail-to-rail input crossover (`VCMT`, `VKT`, `DVOST`, `DIBT`): where the input common-mode voltage moves from one input pair to the other, the offset and the bias currents step smoothly
 - optional input-pair tail capacitance (`KJUMP`): the classic asymmetric follower pulse response (Solomon, IEEE JSSC 1974), in which a fast input step makes the output jump before it slews. The jump is set directly, because the charging path of the tail node can have current gain (in the µA741 the jump is larger than the tail capacitance alone would give). Small-signal behaviour is unchanged
 - optional differential input clamp: two anti-parallel diodes between `inp` and `inn` (`VCLMP`, `RCLMP`); no clamps to the rails
-- output swing limited by the supplies (`VHD`, `VLD` headroom) with a soft clamp of the gain node, so the output recovers from saturation immediately
+- output swing limited by the supplies (`VHD`, `VLD` headroom, growing with the load current at the saturation resistances `RSATH`, `RSATL`) with a soft clamp of the gain node, so the output recovers from saturation immediately
 - output current limit (`ISRC`, `ISNK`) and a class-AB crossover region (`VXO`) in which the small-signal output resistance doubles
 - supply current: quiescent current plus the load current, drawn from the correct rail
 - FDA: the differential swing limit follows the headroom around `Vocm`, and both outputs clip symmetrically while the CM loop keeps regulating
@@ -178,7 +178,7 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 | `VKT` | V | width of the crossover transition | 0.1 | 0.1 |
 | `DVOST` | V | offset change across the transition (`VOS` applies below it); 0 = none | 0 | 0 |
 | `DIBT` | A | bias-current change across the transition, each pin; 0 = none | 0 | 0 |
-| `VHD`, `VLD` | V | minimum headroom between the output and the positive / negative rail (output swing limit) | 2, 2 | 1.2, 1.2 |
+| `VHD`, `VLD` | V | minimum headroom between the output and the positive / negative rail (output swing limit) without load | 2, 2 | 1.2, 1.2 |
 
 **Output stage** (per output for the FDA)
 
@@ -186,7 +186,10 @@ There are no clamp diodes from the inputs to the supply rails. For an OP27-style
 |---|---|---|---|---|
 | `ROUT` | Ω | open-loop output resistance above the dominant pole (the datasheet's r_o) | 75 | 10 |
 | `ROUTDC` | Ω | additional open-loop output resistance at DC (each output of the FDA): the high-impedance gain node seen through the output stage. Zout = `ROUT` + `ROUTDC`/(1 + jf/f_d), f_d = `GBW`/`A0`, and the DC gain into RL is `A0`·RL/(RL + `ROUT` + `ROUTDC`). Typically tens of times `ROUT` for a simple bipolar output, hundreds for a common-source (rail-to-rail) one; it also makes the rejection rules use the right (unloaded) gain | 0 | 0 |
+| `RSATH`, `RSATL` | Ω | saturation resistance at the top / bottom: with the output saturated, the headroom is `VHD` + `RSATH`·Iout (sourcing), `VLD` + `RSATL`·Iout (sinking). 0 = `ROUT`. Real stages often saturate with a slope unlike the small-signal `ROUT`: a CMOS common-source stage far lower, a bipolar one often higher. From a datasheet plot of output swing vs output current (`OPAMP_FULL` only) | 0, 0 | – |
 | `COUT` | F | output capacitance (half to each rail) | 3p | 1p |
+| `LOUT` | H | output inductance in series with `ROUT`: the open-loop Zout rises as `ROUT` + jω`LOUT` and resonates with `COUT`, as for an emitter or source follower driven from a high-impedance node; it lowers the phase margin with capacitive loads (`OPAMP_FULL` only) | 0 | – |
+| `RLOUT` | Ω | resistance across `LOUT`: Zout levels off at `ROUT` + `RLOUT` (a follower's driving resistance seen through a falling β). 0 = pure inductance (`OPAMP_FULL` only) | 0 | – |
 | `ISRC`, `ISNK` | A | maximum current the output can source / sink | 25m, 25m | 50m, 50m |
 | `VXO` | V | class-AB crossover dead zone: for output currents below about `VXO/ROUT` the small-signal output resistance is `2*ROUT`; 0 disables it | 2m | 0 |
 
@@ -279,6 +282,8 @@ ngspice-42 and the default parameters:
 | follower driven past the top of the range (`ICMHI` = 1.5, `VK` = 0.05), input 14.0 V / 14.8 V | 13.68 V / 13.68 V (stops at the edge) | | |
 | `PSRRP` = `PSRRN` = 31.62k, `FPSRRP` = 10, `FPSRRN` = 1k: PSRR+ / PSRR− at 10 kHz | 30.0 dB / 70.00 dB (theory 30.0 / 69.96 dB) | `PSRRP` = `PSRRN` = 10k, `FPSRRP` = 10k, `FPSRRN` = 1Meg: PSRR+ / PSRR− at 1 MHz | 40.0 dB / 76.99 dB (theory 40.0 / 76.99 dB) |
 | `ROUTDC` = 2850, `ROUT` = 33, `A0` = 8.6k: open-loop Zout at 0.1 Hz / 207 Hz (f_d) / 1 MHz | 2883 / 2039 / 32.9 Ω (theory 2883 / 2048 / 33) | | |
+| saturated output with 10 mA load, `ROUT` = 50, `VHD` = `VLD` = 1: `RSATH` = 100 / `RSATL` = 10 / default | headroom 2.000 / 1.099 / 1.499 V (theory 2.0 / 1.1 / 1.5) | | |
+| output inductance `ROUT` = 33, `LOUT` = 1u, `RLOUT` = 40, `COUT` = 12p: open-loop Zout at 1 / 10 / 30 MHz | 34.53 / 64.90 / 72.10 Ω (theory 34.53 / 64.90 / 72.11) | | |
 | signed values: `PSRRP` = 31.62k with `PSRRN` = +31.62k / −31.62k: derived CMRR; vcc response with `PSRRP` = −31.62k vs +31.62k | 84.7 / 106.0 dB (theory 84.7 / 106.0); 179.8° (180°) | signed values: `PSRRP` = 10k with `PSRRN` = +10k / −20k: derived CMRR | 74.0 / 86.0 dB (theory 74.0 / 86.0) |
 | floating follower (supplies, input and load on a common driven against ground, or lifted by 100 V) | no output (< −300 dB), offset change 1e-14 V | floating gain-2 stage, the same | < −295 dB, 4e-14 V |
 
